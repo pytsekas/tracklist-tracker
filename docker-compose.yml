@@ -1,0 +1,41 @@
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpw}
+      MARIADB_DATABASE: ${MYSQL_DATABASE:-tracklists}
+      MARIADB_USER: ${MYSQL_USER:-tracklists}
+      MARIADB_PASSWORD: ${MYSQL_PASSWORD:-tracklists}
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - dbdata:/var/lib/mysql
+    ports:
+      - "3307:3306"          # host 3307 -> container 3306, so a local MySQL can keep 3306
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE:-tracklists}
+      DB_USER: ${MYSQL_USER:-tracklists}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-tracklists}
+      PORT: 3000
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-32}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+volumes:
+  dbdata:
