@@ -1072,9 +1072,12 @@ before(async () => {
 
 after(() => server?.close());
 
+// Tolerant of non-JSON bodies on purpose: an unmatched route yields Express's
+// default text/html 404, and a bare res.json() would throw SyntaxError inside
+// the helper instead of letting the test assert on the status it cares about.
 const get = async p => {
   const res = await fetch(`${base}${p}`);
-  return { status: res.status, body: await res.json() };
+  return { status: res.status, body: await res.json().catch(() => null) };
 };
 
 test('GET /api/stats returns row counts', async () => {
