@@ -53,8 +53,13 @@ Creates the shared search-normalisation module and the first tests. Nothing else
 In the root `package.json`, add to `"scripts"`:
 
 ```json
-"test": "node --test server/test/"
+"test": "node --test 'server/test/**/*.test.js'"
 ```
+
+The glob is required, not cosmetic: `node --test server/test/` — a bare
+directory — fails on Node 24, which treats the path as a test file and reports
+`✖ server/test ... pass 0 / fail 1`. Keep the quotes so Node does the globbing
+rather than the shell.
 
 - [ ] **Step 2: Write the failing tests**
 
