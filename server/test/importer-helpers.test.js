@@ -46,3 +46,18 @@ test('detectKind reads the header row', () => {
   assert.equal(detectKind([' Content_ID ', 'ARTIST', 'Title']), 'tracks');
   assert.equal(detectKind(['foo', 'bar']), 'unknown');
 });
+
+test('parseEstDate does no calendar validation, only shape', () => {
+  // Current behaviour: the regex checks digit shape only. An impossible date
+  // passes straight through. Pinned deliberately - Task 4 must not silently
+  // start validating or reformatting these.
+  assert.equal(parseEstDate('31.13.2024'), '2024-13-31');
+  assert.equal(parseEstDate('99.99.9999'), '9999-99-99');
+});
+
+test('parseEstDate requires exactly two digits for day and month', () => {
+  // Single-digit forms are rejected by the regex, not zero-padded.
+  assert.equal(parseEstDate('1.2.2024'), null);
+  assert.equal(parseEstDate('1.02.2024'), null);
+  assert.equal(parseEstDate('01.2.2024'), null);
+});
