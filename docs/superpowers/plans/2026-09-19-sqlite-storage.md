@@ -1485,6 +1485,8 @@ git commit -m "Open SQLite read-only and port routes off mysql2"
 - Delete: `client/src/pages/Import.jsx`
 - Modify: `client/src/App.jsx`
 - Modify: `client/src/api.js`
+- Modify: `client/src/pages/Home.jsx` — its empty state links to the removed route
+- Modify: `client/src/styles.css` — `.drop` rules are orphaned once the page is gone
 
 **Interfaces:**
 - Consumes: nothing
@@ -1533,6 +1535,33 @@ export const api = {
 ```
 
 Leave `get`, `fmtDate` and `fmtNum` exactly as they are. `fmtDate` already slices the first ten characters, so a plain `YYYY-MM-DD` string renders identically to the old ISO timestamp — no change needed.
+
+- [ ] **Step 3b: Fix the dead link in the empty state**
+
+`client/src/pages/Home.jsx:28` points users at the page you just deleted:
+
+```jsx
+<p className="empty">Nothing imported yet — head to <Link to="/import">Import</Link>.</p>
+```
+
+Replace it with advice that matches the build-time flow:
+
+```jsx
+<p className="empty">
+  Nothing here yet — put the CSVs in <code>data/csv/</code> and run <code>npm run build:db</code>.
+</p>
+```
+
+Keep the `Link` import at the top of the file: it is still used for the series
+rows at `Home.jsx:38`.
+
+- [ ] **Step 3c: Remove the orphaned styles**
+
+`.drop` and `.drop.over` in `client/src/styles.css` styled the drag-and-drop
+area, used only by `Import.jsx` via `className={`drop${over ? ' over' : ''}`}`.
+Delete both rules. Leave every other rule alone — the classes `Import.jsx` also
+used (`controls`, `empty`, `err`, `note`, `num`, `primary`, `sub`,
+`table-scroll`, `date`) are all shared with pages that remain.
 
 - [ ] **Step 4: Verify the bundle builds**
 
