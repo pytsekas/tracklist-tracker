@@ -114,3 +114,14 @@ test('buildDatabase refuses a file it cannot recognise', () => {
   );
   assert.ok(!fs.existsSync(out), 'leaves no database behind on failure');
 });
+
+test('buildDatabase cleans up when the database cannot be created', () => {
+  const out = tmpFile();
+  // A directory cannot be opened as a SQLite database, so createDatabase()
+  // throws - the one failure path that happens before the import loop.
+  fs.mkdirSync(`${out}.building`);
+
+  assert.throws(() => buildDatabase({ csvDir: FIXTURE_CSV, outPath: out }));
+  assert.ok(!fs.existsSync(`${out}.building`), 'must not leave the temp path behind');
+  assert.ok(!fs.existsSync(out), 'must not ship a database');
+});

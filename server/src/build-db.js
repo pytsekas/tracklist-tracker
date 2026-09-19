@@ -42,10 +42,15 @@ function readCsvDir(dir) {
 export function buildDatabase({ csvDir = DEFAULT_CSV_DIR, outPath = DEFAULT_OUT } = {}) {
   const files = readCsvDir(csvDir);
   const tmp = `${outPath}.building`;
-  const db = createDatabase(tmp);
+  // `db` is declared outside the try but ASSIGNED inside it. createDatabase()
+  // creates the file before applying the schema, so a schema error would
+  // otherwise escape with the temp file already on disk and no cleanup - the
+  // exact leak this function's docstring promises not to have.
+  let db = null;
   const results = [];
 
   try {
+    db = createDatabase(tmp);
     for (const name of files) {
       const result = importCsv({
         db,
@@ -73,8 +78,11 @@ export function buildDatabase({ csvDir = DEFAULT_CSV_DIR, outPath = DEFAULT_OUT 
     fs.renameSync(tmp, outPath);
     return { counts, results };
   } catch (err) {
-    db.close();
-    fs.rmSync(tmp, { force: true });
+    // db may be null if createDatabase() itself threw. close() is a no-op on
+    // an already-closed handle, and is wrapped so a close failure can never
+    // mask the real error or skip the cleanup below.
+    try { db?.close(); } catch { /* ignore */ }
+    fs.rmSync(tmp, { force: true, recursive: true });
     throw err;
   }
 }
