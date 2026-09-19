@@ -25,7 +25,9 @@ export default function Home() {
       )}
 
       {series.data.length === 0 ? (
-        <p className="empty">Nothing imported yet — head to <Link to="/import">Import</Link>.</p>
+        <p className="empty">
+          Nothing here yet — put the CSVs in <code>data/csv/</code> and run <code>npm run build:db</code>.
+        </p>
       ) : (
         <div className="table-scroll">
           <table>
