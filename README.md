@@ -33,22 +33,26 @@ Popikroonikad, Sander Varusk, Varuski teematund, Vibratsioon, Eesti Pops) in one
 
 ## Quick start (Docker)
 
+> **Not working yet.** `docker-compose.yml` and the `Dockerfile` still describe
+> the old two-container MariaDB setup — the image neither builds nor ships the
+> SQLite database, so the container exits at boot with
+> `cannot open database ... run npm run build:db first`.
+> Until they are updated, use [Running locally without Docker](#running-locally-without-docker).
+
+Once the image build is updated, the whole stack is a single container:
+
 ```bash
 docker compose up -d --build
 open http://localhost:3000
 ```
 
-One container. The database is built from `data/csv/` during the image build
-and shipped inside the image, so there is nothing to wait for and no volume to
-manage.
+The database is built from `data/csv/` during the image build and shipped inside
+the image, so there is nothing to wait for and no volume to manage.
 
 ```bash
 docker compose logs -f app    # follow the API log
 docker compose down           # stop
 ```
-
-> **Note:** the Docker build is not yet wired up for the new flow — see Task 8
-> of the migration plan.
 
 ## Running locally without Docker
 
@@ -61,6 +65,8 @@ npm run dev                   # API on :3000, Vite dev server on :5173
 ```
 
 Vite proxies `/api` to `:3000`, so use **http://localhost:5173** in dev.
+In production the Express server serves the built bundle itself, so there is
+only one port.
 
 ## Scripts
 
@@ -80,9 +86,9 @@ Vite proxies `/api` to `:3000`, so use **http://localhost:5173** in dev.
 ## How importing works
 
 The CSVs live in `data/csv/` and are committed. `npm run build:db` reads them
-all and writes `data/tracklists.sqlite`; the Docker build runs the same command,
-so the image always ships a database built from exactly the CSVs in the commit
-it was built from.
+all and writes `data/tracklists.sqlite`. The Docker build will run the same
+command once the image build is updated (see Quick start above), so the image
+ships a database built from exactly the CSVs in the commit it was built from.
 
 The importer figures out what a file is from its **header row**, and which
 series it belongs to from its **filename**:
