@@ -112,9 +112,18 @@ the runtime image. The runtime stage copies the finished `.sqlite` in alongside
 `db.js` opens the file with `{ readonly: true, fileMustExist: true }` and
 exports the handle. Routes prepare their own statements — `/api/tracks` and
 `/api/artists` assemble their `WHERE` clause at request time, so not every
-statement can be precompiled at module load; `better-sqlite3` caches prepared
-statements internally, so this costs nothing. `waitForDb()` and the boot-time
-`migrate()`
+statement can be precompiled at module load.
+
+`better-sqlite3` does **not** cache prepared statements: every `db.prepare()`
+compiles afresh. Measured on this project's schema, re-preparing rather than
+reusing a statement costs about 9µs, and 20 000 prepares take 175ms against
+71ms for 20 000 reuses — a 2.5× multiplier on a number small enough not to
+matter here, where a request issues two statements against a few tens of
+thousands of rows. Preparing per request is therefore fine, but it is fine
+because the cost is negligible, not because it is free. If a route ever ends
+up preparing in a loop, hoist it.
+
+`waitForDb()` and the boot-time `migrate()`
 (`server/src/db.js:22`, `:38`) are deleted — there is nothing to wait for and
 the schema is already in the file.
 
