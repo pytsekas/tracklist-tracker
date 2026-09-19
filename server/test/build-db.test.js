@@ -115,6 +115,25 @@ test('buildDatabase refuses a file it cannot recognise', () => {
   assert.ok(!fs.existsSync(out), 'leaves no database behind on failure');
 });
 
+test('normalised ordering is case-insensitive, raw ordering is not', () => {
+  // Pins the collation behaviour the /api/artists and /api/series ORDER BY
+  // clauses depend on. MariaDB's utf8mb4_unicode_ci was case-insensitive;
+  // SQLite's default BINARY collation is not, which silently reordered both
+  // lists during the migration.
+  const db = createDatabase(tmpFile());
+  const ins = db.prepare('INSERT INTO artists (name, name_norm) VALUES (?, ?)');
+  for (const n of ['Zorro', 'abba', 'Beatles', 'the Who']) ins.run(n, n.toLowerCase());
+
+  const byName = db.prepare('SELECT name FROM artists ORDER BY name').all().map(r => r.name);
+  const byNorm = db.prepare('SELECT name FROM artists ORDER BY name_norm').all().map(r => r.name);
+
+  assert.deepEqual(byName, ['Beatles', 'Zorro', 'abba', 'the Who'],
+    'raw BINARY collation puts every uppercase initial first');
+  assert.deepEqual(byNorm, ['abba', 'Beatles', 'the Who', 'Zorro'],
+    'name_norm restores the case-insensitive order MariaDB gave');
+  db.close();
+});
+
 test('buildDatabase cleans up when the database cannot be created', () => {
   const out = tmpFile();
   // A directory cannot be opened as a SQLite database, so createDatabase()

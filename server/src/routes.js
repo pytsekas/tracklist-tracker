@@ -38,7 +38,7 @@ router.get('/series', (_req, res, next) => {
       FROM series s
       LEFT JOIN shows sh ON sh.series_id = s.id
       GROUP BY s.id
-      ORDER BY s.name`).all());
+      ORDER BY s.name COLLATE NOCASE`).all());
   } catch (e) { next(e); }
 });
 
@@ -135,7 +135,7 @@ router.get('/artists', (req, res, next) => {
       JOIN shows sh ON sh.id = t.show_id
       ${clause}
       GROUP BY a.id
-      ORDER BY plays DESC, a.name
+      ORDER BY plays DESC, a.name_norm
       LIMIT ? OFFSET ?`).all(...args, ps, (p - 1) * ps);
 
     const { total } = db().prepare(
