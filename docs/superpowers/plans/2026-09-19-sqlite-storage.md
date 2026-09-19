@@ -842,9 +842,13 @@ test('buildDatabase produces a readable database', () => {
 });
 
 test('buildDatabase is deterministic', () => {
-  // Logical equivalence, not byte equality: created_at/updated_at embed the
-  // build time via datetime('now'), so two builds are never byte-identical.
-  // Do not "strengthen" this into a file hash comparison - it will flake.
+  // Logical equivalence, not byte equality. created_at/updated_at embed the
+  // build time via datetime('now'), which has SECOND granularity: two builds
+  // inside the same second come out byte-identical, two builds straddling a
+  // second boundary do not. Both were measured.
+  // Do NOT "strengthen" this into a file-hash comparison. It would pass
+  // almost every run and fail unpredictably on the rare boundary crossing -
+  // the worst kind of flake, and the reason this asserts counts instead.
   const a = tmpFile();
   const b = tmpFile();
   const first = buildDatabase({ csvDir: FIXTURE_CSV, outPath: a });
