@@ -26,7 +26,9 @@ export default function Home() {
 
       {series.data.length === 0 ? (
         <p className="empty">
-          Nothing here yet — put the CSVs in <code>data/csv/</code> and run <code>npm run build:db</code>.
+          No tracklists loaded. The archive is built from the CSV files in{' '}
+          <code>data/csv/</code> when the app is built — see the README if you are
+          running this locally.
         </p>
       ) : (
         <div className="table-scroll">
