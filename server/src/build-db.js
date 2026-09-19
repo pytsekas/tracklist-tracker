@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { importCsv } from './importer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,4 +19,81 @@ export function createDatabase(file) {
   db.pragma('foreign_keys = ON');
   db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
   return db;
+}
+
+/** List the CSVs in `dir`, tracks files first. Throws if there are none. */
+function readCsvDir(dir) {
+  if (!fs.existsSync(dir)) throw new Error(`CSV directory not found: ${dir}`);
+
+  const files = fs.readdirSync(dir).filter(f => f.toLowerCase().endsWith('.csv'));
+  if (files.length === 0) throw new Error(`No CSV files in ${dir}`);
+
+  // tracks first: the shows files add episodes that have no tracklist, and
+  // they must land on top of the shows the tracks files already created.
+  const rank = f => (/_tracks\.csv$/i.test(f) ? 0 : 1);
+  return files.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
+
+/**
+ * Build a complete database from `csvDir` and move it into place at `outPath`.
+ * Builds to a temporary file and renames only on success, so a failed build
+ * never leaves a half-populated database behind.
+ */
+export function buildDatabase({ csvDir = DEFAULT_CSV_DIR, outPath = DEFAULT_OUT } = {}) {
+  const files = readCsvDir(csvDir);
+  const tmp = `${outPath}.building`;
+  const db = createDatabase(tmp);
+  const results = [];
+
+  try {
+    for (const name of files) {
+      const result = importCsv({
+        db,
+        filename: name,
+        buffer: fs.readFileSync(path.join(csvDir, name)),
+      });
+      if (!result.ok) throw new Error(`${name}: ${result.message}`);
+      results.push(result);
+    }
+
+    const count = table => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
+    const counts = {
+      series: count('series'),
+      shows: count('shows'),
+      tracks: count('tracks'),
+      artists: count('artists'),
+    };
+
+    if (counts.tracks === 0) {
+      throw new Error('built database contains no tracks - refusing to ship it');
+    }
+
+    db.exec('VACUUM');
+    db.close();
+    fs.renameSync(tmp, outPath);
+    return { counts, results };
+  } catch (err) {
+    db.close();
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
+}
+
+/* --------------------------------- cli ------------------------------------ */
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    const { counts, results } = buildDatabase();
+    for (const r of results) {
+      console.log(`  ${r.filename}: ${r.rows_read} rows, ${r.skipped} skipped`);
+    }
+    console.log(`built ${DEFAULT_OUT}`);
+    console.log(
+      `  series ${counts.series}  shows ${counts.shows}` +
+      `  tracks ${counts.tracks}  artists ${counts.artists}`
+    );
+  } catch (err) {
+    console.error(`build failed: ${err.message}`);
+    process.exit(1);
+  }
 }

@@ -3,3 +3,5 @@ client/dist/
 .env
 *.log
 .DS_Store
+data/*.sqlite
+data/*.sqlite.building

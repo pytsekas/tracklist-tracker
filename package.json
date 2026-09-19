@@ -6,6 +6,7 @@
   "workspaces": ["server", "client"],
   "scripts": {
     "test": "node --test 'server/test/**/*.test.js'",
+    "build:db": "node server/src/build-db.js",
     "dev": "concurrently -n api,web -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "npm --workspace server run dev",
     "dev:client": "npm --workspace client run dev",
