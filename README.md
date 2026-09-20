@@ -5,42 +5,62 @@ Popikroonikad, Sander Varusk, Varuski teematund, Vibratsioon, Eesti Pops) in one
 
 * **API** — Express (Node 22, ES modules)
 * **UI** — React 18 + Vite, React Router
-* **DB** — MariaDB 11 (MySQL-compatible), `mysql2` driver
-* **Import** — upload the `*_tracks.csv` / `*_shows.csv` files through the UI
+* **Data** — SQLite, built from the CSVs in `data/csv/` at image build time
+* **Import** — `npm run build:db`; re-scraping means committing new CSVs
 
 ---
 
+###
+* Clean project - clean data import and storage options. Data load when viewing from frontend
+* Github build
+* Best GCP deploy options + github action
+
+
+
+
+❯ for a start this app looks OK,
+  i now want to implement CI&/CD
+  when pushing to github, project is built and deplyed
+
+  for deployment I want to use GCP
+
+  lets start with setting up infra
+
+  for that I want to use Terraform
+  What is thre simpliest solution
+
+
+
 ## Quick start (Docker)
 
+> **Not working yet.** `docker-compose.yml` and the `Dockerfile` still describe
+> the old two-container MariaDB setup — the image neither builds nor ships the
+> SQLite database, so the container exits at boot with
+> `cannot open database ... run npm run build:db first`.
+> Until they are updated, use [Running locally without Docker](#running-locally-without-docker).
+
+Once the image build is updated, the whole stack is a single container:
+
 ```bash
-cp .env.example .env          # edit the passwords if you like
 docker compose up -d --build
 open http://localhost:3000
 ```
 
-That starts two containers: `db` (MariaDB, data in the `dbdata` volume) and
-`app` (Express serving the built React bundle on port 3000).
-MariaDB is published on host port **3307** so it won't clash with a local MySQL.
-
-Then open **Import** in the UI and drop in the CSV files from the show folders.
-Load the `_tracks.csv` files first, then the `_shows.csv` files — the latter add
-the episodes that have no tracklist, so the archive gaps stay visible.
+The database is built from `data/csv/` during the image build and shipped inside
+the image, so there is nothing to wait for and no volume to manage.
 
 ```bash
 docker compose logs -f app    # follow the API log
-docker compose down           # stop (keeps the volume)
-docker compose down -v        # stop and wipe the database
+docker compose down           # stop
 ```
 
 ## Running locally without Docker
 
-Needs Node 22+ and a MariaDB/MySQL you can reach.
+Needs Node 22+. No database server.
 
 ```bash
 npm install
-# point the server at your database
-export DB_HOST=127.0.0.1 DB_PORT=3306 \
-       DB_NAME=tracklists DB_USER=tracklists DB_PASSWORD=tracklists
+npm run build:db              # data/csv/*.csv -> data/tracklists.sqlite
 npm run dev                   # API on :3000, Vite dev server on :5173
 ```
 
@@ -54,7 +74,9 @@ only one port.
 | --- | --- |
 | `npm run dev` | API with `--watch` + Vite dev server, side by side |
 | `npm run build` | Build the React bundle into `client/dist` |
+| `npm run build:db` | Build `data/tracklists.sqlite` from the CSVs in `data/csv/` |
 | `npm start` | Run the API (serves `client/dist` if it exists) |
+| `npm test` | Run the test suite |
 | `npm run docker:build` | `docker compose build` |
 | `npm run docker:up` / `:down` | Start / stop the stack |
 | `npm run docker:logs` | Follow the app container's log |
@@ -63,31 +85,41 @@ only one port.
 
 ## How importing works
 
-The importer figures out what a file is from its **header row**, and which series
-it belongs to from its **filename**:
+The CSVs live in `data/csv/` and are committed. `npm run build:db` reads them
+all and writes `data/tracklists.sqlite`. The Docker build will run the same
+command once the image build is updated (see Quick start above), so the image
+ships a database built from exactly the CSVs in the commit it was built from.
+
+The importer figures out what a file is from its **header row**, and which
+series it belongs to from its **filename**:
 
     eesti_pops_tracks.csv  ->  series slug "eesti_pops", kind "tracks"
     fantaasia_shows.csv    ->  series slug "fantaasia",  kind "shows"
 
-**Re-importing the same file is safe.** Shows are matched on `content_id` — ERR's
-own episode id, which is stable and unique — and a show's tracks are deleted and
-re-inserted rather than appended. So you can re-scrape, re-upload, and the
-numbers stay correct.
+`*_tracks.csv` files are processed before `*_shows.csv` files, because the shows
+files add the episodes that have no tracklist — the ones that keep the archive
+gaps visible.
 
 For `_shows.csv` files there is no `content_id` column, so it is parsed out of
 the show URL (`https://r2.err.ee/1610128043/...` → `1610128043`).
 
-Every import is recorded in the `imports` table and shown under **Recent imports**.
+**Re-running the build is safe.** Shows are matched on `content_id` — ERR's own
+episode id, which is stable and unique — and a show's tracks are deleted and
+re-inserted rather than appended. Re-scrape, replace the CSVs, rebuild, and the
+numbers stay correct.
+
+The build refuses to produce a database it cannot vouch for: a missing
+`data/csv/`, no CSV files, a file whose columns it does not recognise, or a
+final track count of zero all fail the build rather than shipping an empty
+archive.
 
 ## Schema
 
-Five tables, in `server/src/schema.sql`. It is applied on every boot and every
-statement is `CREATE TABLE IF NOT EXISTS`, so editing the file and restarting is
-the workflow for changing it — this is the starting point, not the final design.
+Four tables, in `server/src/schema.sql`. It is applied once, when the database
+is built — the running server opens the file read-only and never writes to it.
 
 ```
 series ──< shows ──< tracks >── artists
-                          imports   (audit log)
 ```
 
 * `series` — one row per radio show (slug, display name)
@@ -96,10 +128,15 @@ series ──< shows ──< tracks >── artists
 * `artists` — deduplicated; `name` is what ERR printed, `name_norm` is the
   lowercased/whitespace-collapsed form used for matching
 * `tracks` — `position` preserves the play order within an episode; `artist_id`
-  is `NULL` where ERR left the artist blank
+  is `NULL` where ERR left the artist blank; `title_norm` mirrors `name_norm`
 
-To change the schema: edit `schema.sql`, then `docker compose restart app`
-(or `docker compose down -v && docker compose up -d` to start from empty).
+**About the `_norm` columns.** SQLite's `LIKE` only folds case for ASCII, so
+searching would otherwise miss `Õhtu` when you typed `õhtu`. Both search routes
+match against the precomputed `_norm` columns instead. Diacritics are preserved
+on purpose — `õ`, `ä`, `ö` and `ü` are distinct Estonian letters, so `magi` does
+not match `Mägi`.
+
+To change the schema: edit `schema.sql`, then re-run `npm run build:db`.
 
 ## API
 
@@ -112,9 +149,7 @@ To change the schema: edit `schema.sql`, then `docker compose restart app`
 | GET | `/api/tracks` | `?q=&series=&from=&to=&page=&pageSize=` |
 | GET | `/api/artists` | `?q=&page=` — ranked by play count |
 | GET | `/api/artists/:id` | every play, across all series |
-| POST | `/api/import` | multipart `files[]` |
-| GET | `/api/imports` | last 50 import runs |
-| GET | `/healthz` | container healthcheck |
+| GET | `/healthz` | container healthcheck; 503 when the database is empty |
 
 ---
 

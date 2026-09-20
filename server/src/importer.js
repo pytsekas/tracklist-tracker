@@ -1,5 +1,5 @@
 import { parse } from 'csv-parse/sync';
-import { pool } from './db.js';
+import { norm } from './normalize.js';
 
 /* ------------------------------------------------------------------ *
  * Helpers
@@ -31,8 +31,6 @@ function prettify(slug) {
   return slug.replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-const norm = s => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
-
 /** Decide what a CSV is from its header row. */
 export function detectKind(headers) {
   const h = headers.map(x => x.trim().toLowerCase());
@@ -45,21 +43,19 @@ export function detectKind(headers) {
  * Lookups
  * ------------------------------------------------------------------ */
 
-async function upsertSeries(conn, slug, name) {
-  await conn.query(
+function upsertSeries(db, slug, name) {
+  db.prepare(
     `INSERT INTO series (slug, name) VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE name = VALUES(name)`,
-    [slug, name]
-  );
-  const [rows] = await conn.query(`SELECT id FROM series WHERE slug = ?`, [slug]);
-  return rows[0].id;
+     ON CONFLICT(slug) DO UPDATE SET name = excluded.name`
+  ).run(slug, name);
+  return db.prepare(`SELECT id FROM series WHERE slug = ?`).get(slug).id;
 }
 
 /**
- * Resolve many artist names to ids in as few round trips as possible.
+ * Resolve artist names to ids, creating the ones we have not seen.
  * Returns Map(name_norm -> id) and the number of newly created rows.
  */
-async function resolveArtists(conn, names) {
+function resolveArtists(db, names) {
   const wanted = new Map();               // name_norm -> display name
   for (const n of names) {
     const k = norm(n);
@@ -67,48 +63,34 @@ async function resolveArtists(conn, names) {
   }
   if (wanted.size === 0) return { map: new Map(), created: 0 };
 
-  const keys = [...wanted.keys()];
+  const insert = db.prepare(
+    `INSERT INTO artists (name, name_norm) VALUES (?, ?)
+     ON CONFLICT(name_norm) DO NOTHING`
+  );
+  const select = db.prepare(`SELECT id FROM artists WHERE name_norm = ?`);
+
   const map = new Map();
-
-  for (let i = 0; i < keys.length; i += 500) {
-    const chunk = keys.slice(i, i + 500);
-    const [rows] = await conn.query(
-      `SELECT id, name_norm FROM artists WHERE name_norm IN (?)`, [chunk]
-    );
-    for (const r of rows) map.set(r.name_norm, r.id);
-  }
-
-  const missing = keys.filter(k => !map.has(k));
   let created = 0;
-  for (let i = 0; i < missing.length; i += 500) {
-    const chunk = missing.slice(i, i + 500);
-    const values = chunk.map(k => [wanted.get(k), k]);
-    const [res] = await conn.query(
-      `INSERT IGNORE INTO artists (name, name_norm) VALUES ?`, [values]
-    );
-    created += res.affectedRows || 0;
-    const [rows] = await conn.query(
-      `SELECT id, name_norm FROM artists WHERE name_norm IN (?)`, [chunk]
-    );
-    for (const r of rows) map.set(r.name_norm, r.id);
+  for (const [key, display] of wanted) {
+    if (insert.run(display, key).changes > 0) created++;
+    map.set(key, select.get(key).id);
   }
   return { map, created };
 }
 
-async function upsertShow(conn, { contentId, seriesId, title, showDate, url, trackCount }) {
-  await conn.query(
-    `INSERT INTO shows (content_id, series_id, title, show_date, url, track_count)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       series_id   = VALUES(series_id),
-       title       = VALUES(title),
-       show_date   = COALESCE(VALUES(show_date), show_date),
-       url         = COALESCE(VALUES(url), url),
-       track_count = VALUES(track_count)`,
-    [contentId, seriesId, title, showDate, url, trackCount]
-  );
-  const [rows] = await conn.query(`SELECT id FROM shows WHERE content_id = ?`, [contentId]);
-  return rows[0].id;
+function upsertShow(db, { contentId, seriesId, title, showDate, url, trackCount }) {
+  db.prepare(
+    `INSERT INTO shows (content_id, series_id, title, show_date, url, track_count, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(content_id) DO UPDATE SET
+       series_id   = excluded.series_id,
+       title       = excluded.title,
+       show_date   = COALESCE(excluded.show_date, shows.show_date),
+       url         = COALESCE(excluded.url, shows.url),
+       track_count = excluded.track_count,
+       updated_at  = datetime('now')`
+  ).run(contentId, seriesId, title, showDate, url, trackCount);
+  return db.prepare(`SELECT id FROM shows WHERE content_id = ?`).get(contentId).id;
 }
 
 /* ------------------------------------------------------------------ *
@@ -116,11 +98,12 @@ async function upsertShow(conn, { contentId, seriesId, title, showDate, url, tra
  * ------------------------------------------------------------------ */
 
 /**
- * Import one CSV buffer.
+ * Import one CSV buffer into `db`. Synchronous: better-sqlite3 has no async API.
+ *
  * Re-importing the same file is safe: shows match on content_id and a show's
  * tracks are replaced wholesale, so nothing is duplicated.
  */
-export async function importCsv({ filename, buffer, seriesSlug: slugOverride, seriesName }) {
+export function importCsv({ db, filename, buffer, seriesSlug: slugOverride, seriesName }) {
   const text = buffer.toString('utf8').replace(/^﻿/, '');
   const records = parse(text, { columns: true, skip_empty_lines: true, trim: false, bom: true });
   const headers = records.length ? Object.keys(records[0]) : [];
@@ -138,27 +121,23 @@ export async function importCsv({ filename, buffer, seriesSlug: slugOverride, se
   if (kind === 'unknown') {
     result.ok = false;
     result.message = `Unrecognised columns: ${headers.join(', ')}`;
-    await logImport(result);
     return result;
   }
 
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  const run = db.transaction(() => {
     const displayName =
       seriesName ||
       (kind === 'tracks' && records[0]?.show_title
         ? String(records[0].show_title).split(/[.:]/)[0].trim()
         : prettify(slug));
-    const seriesId = await upsertSeries(conn, slug, displayName || prettify(slug));
+    const seriesId = upsertSeries(db, slug, displayName || prettify(slug));
 
     if (kind === 'shows') {
       for (const r of records) {
         const url = r.show_url?.trim();
         const contentId = contentIdFromUrl(url);
         if (!contentId) { result.skipped++; continue; }
-        await upsertShow(conn, {
+        upsertShow(db, {
           contentId, seriesId,
           title: (r.show_title || '').trim() || prettify(slug),
           showDate: parseEstDate(r.show_date),
@@ -167,71 +146,61 @@ export async function importCsv({ filename, buffer, seriesSlug: slugOverride, se
         });
         result.shows_upserted++;
       }
-    } else {
-      // group rows by episode, preserving file order as the track order
-      const groups = new Map();
-      for (const r of records) {
-        const contentId = Number(r.content_id) || contentIdFromUrl(r.show_url);
-        if (!contentId) { result.skipped++; continue; }
-        if (!groups.has(contentId)) groups.set(contentId, []);
-        groups.get(contentId).push(r);
-      }
-
-      const { map: artistMap, created } = await resolveArtists(
-        conn, records.map(r => r.artist).filter(Boolean)
-      );
-      result.artists_created = created;
-
-      for (const [contentId, rows] of groups) {
-        const first = rows[0];
-        const showId = await upsertShow(conn, {
-          contentId, seriesId,
-          title: (first.show_title || '').trim() || prettify(slug),
-          showDate: parseEstDate(first.show_date),
-          url: first.show_url?.trim() || null,
-          trackCount: rows.length,
-        });
-        result.shows_upserted++;
-
-        // replace, don't append - keeps re-imports idempotent
-        await conn.query(`DELETE FROM tracks WHERE show_id = ?`, [showId]);
-
-        const values = rows.map((r, i) => [
-          showId,
-          artistMap.get(norm(r.artist)) ?? null,
-          (r.title || '').trim(),
-          i + 1,
-        ]);
-        for (let i = 0; i < values.length; i += 1000) {
-          const chunk = values.slice(i, i + 1000);
-          const [res] = await conn.query(
-            `INSERT INTO tracks (show_id, artist_id, title, position) VALUES ?`, [chunk]
-          );
-          result.tracks_inserted += res.affectedRows || 0;
-        }
-      }
+      return;
     }
 
-    await conn.commit();
+    // group rows by episode, preserving file order as the track order
+    const groups = new Map();
+    for (const r of records) {
+      const contentId = Number(r.content_id) || contentIdFromUrl(r.show_url);
+      if (!contentId) { result.skipped++; continue; }
+      if (!groups.has(contentId)) groups.set(contentId, []);
+      groups.get(contentId).push(r);
+    }
+
+    const { map: artistMap, created } = resolveArtists(
+      db, records.map(r => r.artist).filter(Boolean)
+    );
+    result.artists_created = created;
+
+    const deleteTracks = db.prepare(`DELETE FROM tracks WHERE show_id = ?`);
+    const insertTrack = db.prepare(
+      `INSERT INTO tracks (show_id, artist_id, title, title_norm, position)
+       VALUES (?, ?, ?, ?, ?)`
+    );
+
+    for (const [contentId, rows] of groups) {
+      const first = rows[0];
+      const showId = upsertShow(db, {
+        contentId, seriesId,
+        title: (first.show_title || '').trim() || prettify(slug),
+        showDate: parseEstDate(first.show_date),
+        url: first.show_url?.trim() || null,
+        trackCount: rows.length,
+      });
+      result.shows_upserted++;
+
+      // replace, don't append - keeps re-imports idempotent
+      deleteTracks.run(showId);
+
+      rows.forEach((r, i) => {
+        const title = (r.title || '').trim();
+        insertTrack.run(showId, artistMap.get(norm(r.artist)) ?? null, title, norm(title), i + 1);
+        result.tracks_inserted++;
+      });
+    }
+  });
+
+  try {
+    run();
   } catch (err) {
-    await conn.rollback();
+    // db.transaction() has already rolled back by the time we get here.
     result.ok = false;
     result.message = err.message;
-  } finally {
-    conn.release();
+    result.shows_upserted = 0;
+    result.tracks_inserted = 0;
+    result.artists_created = 0;
   }
 
-  await logImport(result);
   return result;
-}
-
-async function logImport(r) {
-  await pool.query(
-    `INSERT INTO imports
-       (filename, kind, series_slug, rows_read, shows_upserted, tracks_inserted,
-        artists_created, skipped, ok, message)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [r.filename, r.kind, r.series_slug, r.rows_read, r.shows_upserted,
-     r.tracks_inserted, r.artists_created, r.skipped, r.ok ? 1 : 0, r.message]
-  );
 }
