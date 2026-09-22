@@ -52,28 +52,35 @@ app.use((err, _req, res, _next) => {
 
 const port = Number(process.env.PORT || 3000);
 
+// Fatal: the archive is the product. If it cannot be opened, or the temp
+// table it hosts can't be created, there is nothing to serve.
+let handle;
 try {
-  const handle = openDb();
+  handle = openDb();
   console.log(`opened ${DB_PATH}`);
-
-  const store = await createStore();
-  setStore(store);
   createAnnotationTable(handle);
-
-  const owner = devEmail ?? process.env.OWNER_EMAIL;
-  if (owner) {
-    // Best-effort: the archive is the product and stays readable even if the
-    // annotation store is unreachable.
-    try {
-      loadAnnotations(handle, await store.list(owner));
-    } catch (err) {
-      console.error(`could not load annotations: ${err.message}`);
-    }
-  }
 } catch (err) {
   console.error(`cannot open database at ${DB_PATH}: ${err.message}`);
   console.error('run `npm run build:db` first');
   process.exit(1);
+}
+
+// Non-fatal: annotations are a personal layer on top of the archive, not the
+// archive itself. Fail the request, not the process — the archive stays
+// fully readable even if the annotation store can't be constructed or
+// loaded. If the store never gets set, getStore() throws when called: reads
+// keep returning null annotations against the (empty) temp table, and writes
+// (Task 5) surface a loud error rather than silently no-op against nothing.
+try {
+  const store = await createStore();
+  setStore(store);
+
+  const owner = devEmail ?? process.env.OWNER_EMAIL;
+  if (owner) {
+    loadAnnotations(handle, await store.list(owner));
+  }
+} catch (err) {
+  console.error(`annotation store unavailable at boot: ${err.message}`);
 }
 
 app.listen(port, () => console.log(`api + ui listening on :${port}`));
