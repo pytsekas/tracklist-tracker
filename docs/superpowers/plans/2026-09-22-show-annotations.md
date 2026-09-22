@@ -80,6 +80,7 @@ The durable-storage seam. Everything later in the plan talks to this interface a
   - `EMPTY` — the default annotation object, frozen
   - `validatePatch(body) => { ok: true, patch } | { ok: false, error: string }`
   - `applyPatch(current, patch) => Annotation` — field-level merge
+  - `unavailable(err) => Error` with `code = 'ANNOTATION_STORE_UNAVAILABLE'` — shared by both drivers
   - `createSqliteStore(file) => Store`
   - `Store` = `{ list(owner), get(owner, contentId), merge(owner, contentId, patch), remove(owner, contentId), close() }`, all async except `close()`
   - `Annotation` = `{ listened: boolean, listened_at: string|null, rating: number|null, notes: string|null, want_to_listen: boolean, tags: string[], updated_at: string }`
@@ -378,6 +379,18 @@ export function applyPatch(current, patch, now = new Date()) {
   return next;
 }
 
+/**
+ * Wrap a driver failure so the error handler can tell "the store is
+ * unreachable" (502, worth retrying) from "this request is wrong" (400).
+ * Lives here rather than in each driver so there is one copy, not one per
+ * backend.
+ */
+export function unavailable(err) {
+  const wrapped = new Error(`annotation store unavailable: ${err.message}`);
+  wrapped.code = 'ANNOTATION_STORE_UNAVAILABLE';
+  wrapped.cause = err;
+  return wrapped;
+}
 ```
 
 - [ ] **Step 4: Write `sqlite.js`**
@@ -388,7 +401,7 @@ Create `server/src/annotations/sqlite.js`:
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
-import { EMPTY, applyPatch } from './store.js';
+import { EMPTY, applyPatch, unavailable } from './store.js';
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS annotations (
@@ -442,37 +455,48 @@ export function createSqliteStore(file) {
   const del = handle.prepare(
     'DELETE FROM annotations WHERE owner = ? AND content_id = ?');
 
+  // Every method wraps its failure in unavailable(), so a broken store reaches
+  // the client as a 502 rather than an opaque 500 — the same contract the
+  // Firestore driver honours.
   return {
     async list(owner) {
-      return new Map(
-        selectAll.all(owner).map(r => [Number(r.content_id), toAnnotation(r)]));
+      try {
+        return new Map(
+          selectAll.all(owner).map(r => [Number(r.content_id), toAnnotation(r)]));
+      } catch (err) { throw unavailable(err); }
     },
 
     async get(owner, contentId) {
-      const row = selectOne.get(owner, Number(contentId));
-      return row ? toAnnotation(row) : null;
+      try {
+        const row = selectOne.get(owner, Number(contentId));
+        return row ? toAnnotation(row) : null;
+      } catch (err) { throw unavailable(err); }
     },
 
     async merge(owner, contentId, patch) {
-      const id = Number(contentId);
-      const current = selectOne.get(owner, id);
-      const next = applyPatch(current ? toAnnotation(current) : { ...EMPTY }, patch);
-      upsert.run({
-        owner,
-        content_id: id,
-        listened: next.listened ? 1 : 0,
-        listened_at: next.listened_at,
-        rating: next.rating,
-        notes: next.notes,
-        want_to_listen: next.want_to_listen ? 1 : 0,
-        tags: JSON.stringify(next.tags),
-        updated_at: next.updated_at,
-      });
-      return next;
+      try {
+        const id = Number(contentId);
+        const current = selectOne.get(owner, id);
+        const next = applyPatch(current ? toAnnotation(current) : { ...EMPTY }, patch);
+        upsert.run({
+          owner,
+          content_id: id,
+          listened: next.listened ? 1 : 0,
+          listened_at: next.listened_at,
+          rating: next.rating,
+          notes: next.notes,
+          want_to_listen: next.want_to_listen ? 1 : 0,
+          tags: JSON.stringify(next.tags),
+          updated_at: next.updated_at,
+        });
+        return next;
+      } catch (err) { throw unavailable(err); }
     },
 
     async remove(owner, contentId) {
-      del.run(owner, Number(contentId));
+      try {
+        del.run(owner, Number(contentId));
+      } catch (err) { throw unavailable(err); }
     },
 
     close() { handle.close(); },
@@ -612,12 +636,25 @@ test('the join exposes annotation columns and nulls for unannotated shows', () =
     ORDER BY sh.content_id`).all();
 
   const annotated = rows.find(r => r.content_id === 1610000001);
-  assert.equal(annotated.listened, 1);
-  assert.equal(annotated.rating, 4);
-  assert.equal(annotated.tags, '["suvi"]');
+  assert.equal(annotated.ann_listened, 1);
+  assert.equal(annotated.ann_rating, 4);
+  assert.equal(annotated.ann_tags, '["suvi"]');
 
   const untouched = rows.find(r => r.content_id !== 1610000001);
-  assert.equal(untouched.listened, null, 'unannotated shows join to NULL');
+  assert.equal(untouched.ann_listened, null, 'unannotated shows join to NULL');
+});
+
+test('the join does not clobber the show\'s own updated_at', () => {
+  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true })]]));
+  const row = handle.prepare(`
+    SELECT sh.*, ${ANNOTATION_COLUMNS}
+    FROM shows sh ${ANNOTATION_JOIN}
+    WHERE sh.content_id = 1610000001`).get();
+
+  // shows has its own updated_at. Unprefixed annotation columns would
+  // overwrite it here and the show's timestamp would vanish from the API.
+  assert.notEqual(row.updated_at, '2026-09-22T10:00:00.000Z');
+  assert.equal(row.ann_updated_at, '2026-09-22T10:00:00.000Z');
 });
 
 test('unlistened filtering works in SQL', () => {
@@ -677,10 +714,22 @@ CREATE TEMP TABLE IF NOT EXISTS annotations (
   updated_at     TEXT    NOT NULL
 );`;
 
-/** What routes select. `a` is the alias ANNOTATION_JOIN binds. */
+/**
+ * What routes select. `a` is the alias ANNOTATION_JOIN binds.
+ *
+ * Every column is prefixed `ann_`, which is not cosmetic: `shows` has its own
+ * `updated_at`, and `/api/shows/:id` selects `sh.*`. Unprefixed, SQLite hands
+ * back one `updated_at` — the annotation's — and the show's own timestamp is
+ * silently lost from the payload.
+ */
 export const ANNOTATION_COLUMNS = `
-  a.listened, a.listened_at, a.rating, a.notes,
-  a.want_to_listen, a.tags, a.updated_at`;
+  a.listened       AS ann_listened,
+  a.listened_at    AS ann_listened_at,
+  a.rating         AS ann_rating,
+  a.notes          AS ann_notes,
+  a.want_to_listen AS ann_want_to_listen,
+  a.tags           AS ann_tags,
+  a.updated_at     AS ann_updated_at`;
 
 /** What routes join. Expects the shows table to be aliased `sh`. */
 export const ANNOTATION_JOIN = 'LEFT JOIN annotations a ON a.content_id = sh.content_id';
@@ -1165,24 +1214,30 @@ export async function createStore(env = process.env) {
   throw new Error(`unknown ANNOTATIONS_DRIVER: ${driver}`);
 }
 
-/** A joined row's annotation columns -> the API's annotation object, or null. */
+/**
+ * A joined row's `ann_*` columns -> the API's annotation object, or null.
+ * The prefix is what keeps annotation fields from colliding with the show's
+ * own columns; see ANNOTATION_COLUMNS in temp-table.js.
+ */
 export function annotationOf(row) {
-  if (row.listened === null || row.listened === undefined) return null;
+  if (row.ann_listened === null || row.ann_listened === undefined) return null;
   return {
-    listened: !!row.listened,
-    listened_at: row.listened_at,
-    rating: row.rating,
-    notes: row.notes,
-    want_to_listen: !!row.want_to_listen,
-    tags: JSON.parse(row.tags ?? '[]'),
-    updated_at: row.updated_at,
+    listened: !!row.ann_listened,
+    listened_at: row.ann_listened_at,
+    rating: row.ann_rating,
+    notes: row.ann_notes,
+    want_to_listen: !!row.ann_want_to_listen,
+    tags: JSON.parse(row.ann_tags ?? '[]'),
+    updated_at: row.ann_updated_at,
   };
 }
 
-/** Strip the flat annotation columns off a row and nest them under `annotation`. */
+/** Strip the flat `ann_*` columns off a row and nest them under `annotation`. */
 export function withAnnotation(row) {
-  const { listened, listened_at, rating, notes, want_to_listen, tags, updated_at, ...rest } = row;
-  return { ...rest, annotation: annotationOf(row) };
+  const annotation = annotationOf(row);
+  const rest = Object.fromEntries(
+    Object.entries(row).filter(([k]) => !k.startsWith('ann_')));
+  return { ...rest, annotation };
 }
 ```
 
@@ -1324,6 +1379,7 @@ git commit -m "feat: join annotations onto the show read routes"
 
 **Files:**
 - Modify: `server/src/routes.js`
+- Modify: `server/src/index.js` (the error handler only)
 - Create: `server/test/annotations-routes.test.js`
 
 **Interfaces:**
@@ -1583,25 +1639,7 @@ app.use((err, _req, res, _next) => {
 });
 ```
 
-and in `server/src/annotations/sqlite.js` and (later) `firestore.js`, wrap driver failures:
-
-```js
-const unavailable = err => {
-  const wrapped = new Error(`annotation store unavailable: ${err.message}`);
-  wrapped.code = 'ANNOTATION_STORE_UNAVAILABLE';
-  return wrapped;
-};
-```
-
-Apply it in each async method of the SQLite driver:
-
-```js
-    async merge(owner, contentId, patch) {
-      try {
-        /* ...existing body... */
-      } catch (err) { throw unavailable(err); }
-    },
-```
+Both drivers already throw `unavailable()` from `annotations/store.js` (Task 1), so nothing else changes here — this step is only the error handler learning to read the code.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
@@ -1611,7 +1649,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add server/src/routes.js server/src/index.js server/src/annotations/sqlite.js server/test/annotations-routes.test.js
+git add server/src/routes.js server/src/index.js server/test/annotations-routes.test.js
 git commit -m "feat: annotation write routes, /api/me and /api/tags"
 ```
 
@@ -1960,13 +1998,7 @@ Create `server/src/annotations/firestore.js`:
 
 ```js
 import { Firestore } from '@google-cloud/firestore';
-import { EMPTY, applyPatch } from './store.js';
-
-const unavailable = err => {
-  const wrapped = new Error(`annotation store unavailable: ${err.message}`);
-  wrapped.code = 'ANNOTATION_STORE_UNAVAILABLE';
-  return wrapped;
-};
+import { EMPTY, applyPatch, unavailable } from './store.js';
 
 /** Firestore doc -> Annotation. Absent fields fall back to EMPTY's defaults. */
 const toAnnotation = data => ({
@@ -2385,7 +2417,6 @@ const VIEWS = [
 export default function Mine() {
   const [view, setView] = useState('want');
   const [tag, setTag] = useState('');
-  const [page, setPage] = useState(1);
 
   const tags = useAsync(() => api.tags(), []);
   const params = { ...VIEWS.find(v => v.key === view).params, ...(tag ? { tag } : {}) };
@@ -2400,7 +2431,7 @@ export default function Mine() {
           .then(r => r.rows.map(row => ({ ...row, series_name: s.name, series_slug: s.slug })))));
       return pages.flat().sort((a, b) => (b.show_date ?? '').localeCompare(a.show_date ?? ''));
     },
-    [series.data, view, tag, page]);
+    [series.data, view, tag]);
 
   if (series.error) return <p className="err">{series.error.message}</p>;
   if (shows.loading || series.loading) return <p className="empty">Loading…</p>;
@@ -2418,7 +2449,7 @@ export default function Mine() {
           <button key={v.key} type="button"
                   className={v.key === view ? 'chip on' : 'chip'}
                   aria-pressed={v.key === view}
-                  onClick={() => { setView(v.key); setPage(1); }}>{v.label}</button>
+                  onClick={() => setView(v.key)}>{v.label}</button>
         ))}
         {(tags.data ?? []).length > 0 && (
           <select value={tag} onChange={e => setTag(e.target.value)} aria-label="Filter by tag">
