@@ -49,18 +49,46 @@ router.get('/series', (_req, res, next) => {
 router.get('/series/:slug/shows', (req, res, next) => {
   try {
     const p = page(req.query), ps = size(req.query);
-    const rows = db().prepare(`
-      SELECT sh.id, sh.content_id, sh.title, sh.show_date, sh.url, sh.track_count,
-             ${ANNOTATION_COLUMNS}
+    const where = ['s.slug = ?'], args = [req.params.slug];
+
+    // COALESCE, because an unannotated show LEFT JOINs to NULL and NULL = 0
+    // is NULL, not true — without it "unlistened" would return nothing.
+    if (req.query.listened === 'true')  where.push('COALESCE(a.listened, 0) = 1');
+    if (req.query.listened === 'false') where.push('COALESCE(a.listened, 0) = 0');
+    if (req.query.want === 'true')      where.push('COALESCE(a.want_to_listen, 0) = 1');
+
+    if (req.query.ratingMin) {
+      const min = Number(req.query.ratingMin);
+      if (!Number.isInteger(min) || min < 1 || min > 5) {
+        return res.status(400).json({ error: 'ratingMin must be an integer 1-5' });
+      }
+      where.push('a.rating >= ?');
+      args.push(min);
+    }
+
+    // Exact match, not LIKE: tags are chosen from a list, and `norm()` would
+    // fold Mägi and mägi together where the tag list keeps them apart.
+    if (req.query.tag) {
+      where.push(`EXISTS (SELECT 1 FROM json_each(a.tags) j WHERE j.value = ?)`);
+      args.push(req.query.tag);
+    }
+
+    const clause = `WHERE ${where.join(' AND ')}`;
+    const from = `
       FROM shows sh
       JOIN series s ON s.id = sh.series_id
       ${ANNOTATION_JOIN}
-      WHERE s.slug = ?
+      ${clause}`;
+
+    const rows = db().prepare(`
+      SELECT sh.id, sh.content_id, sh.title, sh.show_date, sh.url, sh.track_count,
+             ${ANNOTATION_COLUMNS}
+      ${from}
       ORDER BY sh.show_date DESC, sh.id DESC
-      LIMIT ? OFFSET ?`).all(req.params.slug, ps, (p - 1) * ps);
-    const { total } = db().prepare(
-      `SELECT COUNT(*) AS total FROM shows sh JOIN series s ON s.id = sh.series_id WHERE s.slug = ?`
-    ).get(req.params.slug);
+      LIMIT ? OFFSET ?`).all(...args, ps, (p - 1) * ps);
+
+    const { total } = db().prepare(`SELECT COUNT(*) AS total ${from}`).get(...args);
+
     res.json({ rows: rows.map(withAnnotation), total, page: p, pageSize: ps });
   } catch (e) { next(e); }
 });
