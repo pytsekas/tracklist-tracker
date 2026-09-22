@@ -47,7 +47,10 @@ if (fs.existsSync(clientDist)) {
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
   console.error(err);
-  res.status(500).json({ error: err.message });
+  // A failed annotation write is the store being unreachable, not a bug in the
+  // request: say so, so the client can keep the user's text instead of clearing it.
+  const status = err.code === 'ANNOTATION_STORE_UNAVAILABLE' ? 502 : 500;
+  res.status(status).json({ error: err.message });
 });
 
 const port = Number(process.env.PORT || 3000);

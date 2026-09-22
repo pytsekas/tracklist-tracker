@@ -1,8 +1,10 @@
 import express from 'express';
 import { db } from './db.js';
 import { norm, likeEscape } from './normalize.js';
-import { ANNOTATION_COLUMNS, ANNOTATION_JOIN } from './annotations/temp-table.js';
-import { withAnnotation } from './annotations/index.js';
+import { getStore, withAnnotation } from './annotations/index.js';
+import { validatePatch } from './annotations/store.js';
+import { upsertAnnotationRow, removeAnnotationRow, ANNOTATION_JOIN, ANNOTATION_COLUMNS }
+  from './annotations/temp-table.js';
 
 const router = express.Router();
 
@@ -165,6 +167,62 @@ router.get('/artists/:id', (req, res, next) => {
       WHERE t.artist_id = ?
       ORDER BY sh.show_date DESC`).all(req.params.id);
     res.json({ artist, tracks });
+  } catch (e) { next(e); }
+});
+
+/* ------------------------------ annotations -------------------------------- */
+
+router.get('/me', (req, res) => res.json({ email: req.user.email }));
+
+router.get('/tags', (_req, res, next) => {
+  try {
+    res.json(db().prepare(`
+      SELECT j.value AS tag, COUNT(*) AS count
+      FROM annotations a, json_each(a.tags) j
+      GROUP BY j.value
+      ORDER BY count DESC, tag COLLATE NOCASE`).all());
+  } catch (e) { next(e); }
+});
+
+/** The archive is the authority on which episodes exist. */
+function requireShow(req, res) {
+  const contentId = Number(req.params.contentId);
+  if (!Number.isInteger(contentId)) {
+    res.status(400).json({ error: 'content_id must be an integer' });
+    return null;
+  }
+  const row = db().prepare('SELECT content_id FROM shows WHERE content_id = ?').get(contentId);
+  if (!row) {
+    res.status(404).json({ error: 'not found' });
+    return null;
+  }
+  return contentId;
+}
+
+router.patch('/shows/:contentId/annotation', async (req, res, next) => {
+  try {
+    const contentId = requireShow(req, res);
+    if (contentId === null) return;
+
+    const check = validatePatch(req.body);
+    if (!check.ok) return res.status(400).json({ error: check.error });
+
+    // Durable store first. Only once it has accepted the write does the temp
+    // table move, so the two cannot disagree.
+    const merged = await getStore().merge(req.user.email, contentId, check.patch);
+    upsertAnnotationRow(db(), contentId, merged);
+    res.json(merged);
+  } catch (e) { next(e); }
+});
+
+router.delete('/shows/:contentId/annotation', async (req, res, next) => {
+  try {
+    const contentId = requireShow(req, res);
+    if (contentId === null) return;
+
+    await getStore().remove(req.user.email, contentId);
+    removeAnnotationRow(db(), contentId);
+    res.status(204).end();
   } catch (e) { next(e); }
 });
 
