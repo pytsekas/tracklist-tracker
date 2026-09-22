@@ -66,3 +66,19 @@ button:disabled { opacity: .5; cursor: default; }
 .err { color: #b42318; }
 .empty { color: var(--muted); padding: 24px 0; }
 code { background: var(--panel); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+
+.annotator { margin: 1rem 0 1.5rem; display: grid; gap: .6rem; }
+.annotator-row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.annotator-state { color: var(--muted); font-size: .85rem; min-height: 1.2em; }
+.toggle { display: inline-flex; align-items: center; gap: .35rem; cursor: pointer; }
+.stars { display: inline-flex; gap: .1rem; }
+.star { background: none; border: 0; cursor: pointer; font-size: 1.25rem;
+        line-height: 1; padding: 0 .1rem; color: var(--muted); }
+.star.on { color: var(--accent); }
+.star:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.notes { width: 100%; font: inherit; padding: .5rem; border-radius: 6px;
+         border: 1px solid var(--line); background: transparent; color: inherit; }
+.tag { display: inline-flex; align-items: center; gap: .3rem; padding: .15rem .5rem;
+       border: 1px solid var(--line); border-radius: 999px; font-size: .85rem; }
+.tag button { background: none; border: 0; cursor: pointer; color: var(--muted);
+              font-size: 1rem; line-height: 1; padding: 0; }

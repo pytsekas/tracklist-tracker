@@ -7,6 +7,16 @@ async function get(path, params = {}) {
   return res.json();
 }
 
+async function send(method, path, body) {
+  const res = await fetch(`/api${path}`, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  return res.status === 204 ? null : res.json();
+}
+
 export const api = {
   stats:      ()             => get('/stats'),
   series:     ()             => get('/series'),
@@ -15,6 +25,10 @@ export const api = {
   tracks:     (p)            => get('/tracks', p),
   artists:    (p)            => get('/artists', p),
   artist:     (id)           => get(`/artists/${id}`),
+  me:               ()            => get('/me'),
+  tags:             ()            => get('/tags'),
+  patchAnnotation:  (cid, patch)  => send('PATCH', `/shows/${cid}/annotation`, patch),
+  deleteAnnotation: (cid)         => send('DELETE', `/shows/${cid}/annotation`),
 };
 
 export const fmtDate = d => (d ? String(d).slice(0, 10).split('-').reverse().join('.') : '—');
