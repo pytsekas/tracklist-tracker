@@ -3,6 +3,11 @@ variable "project_id" {
   description = "GCP project the registry and Cloud Run service live in."
 }
 
+variable "owner_email" {
+  type        = string
+  description = "The single Google account allowed through IAP, and the key annotations are stored under."
+}
+
 variable "region" {
   type        = string
   description = "Region for Artifact Registry and Cloud Run."
@@ -36,7 +41,7 @@ variable "deploy_branch" {
 variable "allow_public_access" {
   type        = bool
   description = "Grant roles/run.invoker to allUsers, making the site reachable without signing in."
-  default     = true
+  default     = false
 }
 
 variable "min_instances" {
@@ -48,7 +53,9 @@ variable "min_instances" {
 variable "max_instances" {
   type        = number
   description = "Ceiling on concurrent instances; also the ceiling on a surprise bill."
-  default     = 3
+  # One instance keeps the in-process annotation temp table authoritative: a
+  # write on one instance would otherwise leave another serving stale rows.
+  default = 1
 }
 
 variable "cpu" {
@@ -77,4 +84,10 @@ variable "placeholder_image" {
     to the field.
   EOT
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
+}
+
+variable "firestore_location" {
+  type        = string
+  description = "Firestore location. Cannot be changed after the database is created."
+  default     = "eur3"
 }

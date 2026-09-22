@@ -1,10 +1,11 @@
 resource "google_cloud_run_v2_service" "app" {
-  name     = var.service_name
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  name        = var.service_name
+  location    = var.region
+  ingress     = "INGRESS_TRAFFIC_ALL"
+  iap_enabled = true
 
-  # This is a stateless front end for a read-only archive; nothing here is
-  # irreplaceable, and the guard only gets in the way of `terraform destroy`.
+  # The archive is rebuildable from the CSVs. The annotations are not, but they
+  # live in Firestore, which has its own delete protection.
   deletion_protection = false
 
   template {
@@ -21,6 +22,16 @@ resource "google_cloud_run_v2_service" "app" {
 
       ports {
         container_port = var.container_port
+      }
+
+      env {
+        name  = "IAP_AUDIENCE"
+        value = local.iap_audience
+      }
+
+      env {
+        name  = "OWNER_EMAIL"
+        value = var.owner_email
       }
 
       resources {
