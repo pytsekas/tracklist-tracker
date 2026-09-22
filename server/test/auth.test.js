@@ -8,7 +8,7 @@ import { verifyAssertion, requireUser, IAP_ISSUER, IAP_HEADER } from '../src/aut
 const AUDIENCE = '/projects/123456789/locations/europe-north1/services/tracklist-browser';
 const EMAIL = 'marko@example.com';
 
-let keys, signer, wrongSigner;
+let keys, signer, wrongSigner, rsaSigner;
 
 /** Sign an assertion the way IAP would, with overridable claims. */
 const assertion = async (over = {}, key = signer) =>
@@ -24,10 +24,18 @@ const assertion = async (over = {}, key = signer) =>
 before(async () => {
   const pair = await generateKeyPair('ES256');
   const other = await generateKeyPair('ES256');
+  // A structurally valid, differently-algorithmed keypair: present in the key
+  // set (correct kid) so an algorithm-confusion attempt can only be rejected
+  // by the allowlist, not by a missing key.
+  const rsaPair = await generateKeyPair('RS256');
   signer = pair.privateKey;
   wrongSigner = other.privateKey;
+  rsaSigner = rsaPair.privateKey;
   keys = createLocalJWKSet({
-    keys: [{ ...(await exportJWK(pair.publicKey)), kid: 'test-key', alg: 'ES256' }],
+    keys: [
+      { ...(await exportJWK(pair.publicKey)), kid: 'test-key', alg: 'ES256' },
+      { ...(await exportJWK(rsaPair.publicKey)), kid: 'test-key-rsa', alg: 'RS256' },
+    ],
   });
 });
 
@@ -57,13 +65,50 @@ test('an assertion signed by an unknown key is rejected', async () => {
 });
 
 test('an alg:none assertion is rejected', async () => {
-  // Hand-built, because no signing library will produce this for us.
+  // Hand-built, because no signing library will produce this for us. jose has
+  // no "none" algorithm implementation at all, so a bare rejects() would pass
+  // even without the allowlist (jose would then throw ERR_JOSE_NOT_SUPPORTED
+  // instead) — asserting the specific code is what makes this a real
+  // regression check. The RS256 test below is the positive control for it.
   const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
   const token = [
     b64({ alg: 'none', typ: 'JWT' }),
     b64({ iss: IAP_ISSUER, aud: AUDIENCE, email: EMAIL, exp: Math.floor(Date.now() / 1000) + 300 }),
     '',
   ].join('.');
+  await assert.rejects(
+    () => verifyAssertion(token, { audience: AUDIENCE, keys }),
+    { code: 'ERR_JOSE_ALG_NOT_ALLOWED' });
+});
+
+test('an assertion correctly signed with RS256 is rejected by the algorithm allowlist', async () => {
+  // Algorithm confusion: a structurally valid, correctly issued and audienced
+  // token, genuinely signed by a key that IS in the key set — the only thing
+  // wrong with it is the algorithm. If the allowlist were ever widened or
+  // dropped, this signature would verify and this test would catch it.
+  const token = await new SignJWT({ email: EMAIL })
+    .setProtectedHeader({ alg: 'RS256', kid: 'test-key-rsa' })
+    .setIssuer(IAP_ISSUER)
+    .setAudience(AUDIENCE)
+    .setSubject('accounts.google.com:1234')
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .sign(rsaSigner);
+  await assert.rejects(
+    () => verifyAssertion(token, { audience: AUDIENCE, keys }),
+    { code: 'ERR_JOSE_ALG_NOT_ALLOWED' });
+});
+
+test('an assertion with no exp claim is rejected', async () => {
+  // jose only requires exp when asked; a correctly signed, issued and
+  // audienced token that simply never sets an expiry must still be rejected.
+  const token = await new SignJWT({ email: EMAIL })
+    .setProtectedHeader({ alg: 'ES256', kid: 'test-key' })
+    .setIssuer(IAP_ISSUER)
+    .setAudience(AUDIENCE)
+    .setSubject('accounts.google.com:1234')
+    .setIssuedAt()
+    .sign(signer);
   await assert.rejects(() => verifyAssertion(token, { audience: AUDIENCE, keys }));
 });
 

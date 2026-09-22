@@ -33,6 +33,7 @@ export async function verifyAssertion(token, { audience, keys = iapKeys() }) {
     issuer: IAP_ISSUER,
     audience,
     algorithms: ['ES256'], // an allowlist of one; this is what rejects alg:none
+    requiredClaims: ['exp'], // jose only requires exp when asked; IAP always sets it
   });
   if (!payload.email) throw new Error('IAP assertion carries no email claim');
   return { email: payload.email, sub: payload.sub };
@@ -83,7 +84,7 @@ function statusFor(err) {
   const tokenFault =
     code.startsWith('ERR_JWT_') ||
     code.startsWith('ERR_JWS_') ||
-    code === 'ERR_JOSE_ALG_NOT_ALLOWED' ||
+    code.startsWith('ERR_JOSE_') ||
     code === 'ERR_JWKS_NO_MATCHING_KEY' ||
     /email claim/.test(err.message);
   return tokenFault ? 403 : 503;
