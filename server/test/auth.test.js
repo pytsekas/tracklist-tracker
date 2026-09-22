@@ -74,6 +74,22 @@ test('an assertion with no email claim is rejected', async () => {
     /email/);
 });
 
+test('verifyAssertion rejects when called with no audience', async () => {
+  // jose only checks `aud` when the option is not undefined — an omitted
+  // audience must not silently skip the check.
+  const token = await assertion();
+  await assert.rejects(
+    () => verifyAssertion(token, { audience: undefined, keys }),
+    /audience/);
+});
+
+test('a correctly signed assertion for a different service is rejected', async () => {
+  // Positive control: proves the audience check does real work, so the
+  // "no audience" test above isn't passing for the wrong reason.
+  const token = await assertion({ audience: '/projects/123456789/locations/europe-north1/services/some-other-service' });
+  await assert.rejects(() => verifyAssertion(token, { audience: AUDIENCE, keys }));
+});
+
 /* ------------------------------- middleware -------------------------------- */
 
 async function serve(middleware) {

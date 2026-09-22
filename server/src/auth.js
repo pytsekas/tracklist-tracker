@@ -23,6 +23,12 @@ export function iapKeys(url = IAP_JWKS_URL) {
  * here: a hand-built audience is a check that passes for the wrong service.
  */
 export async function verifyAssertion(token, { audience, keys = iapKeys() }) {
+  // jose only checks `aud` when this option is not undefined — an unset
+  // audience silently skips the check rather than failing it, so a caller
+  // that forwards a missing config value gets a verifier that accepts any
+  // IAP-signed assertion for any service. Guard it here, where the check is.
+  if (!audience) throw new Error('verifyAssertion requires an IAP audience');
+
   const { payload } = await jwtVerify(token, keys, {
     issuer: IAP_ISSUER,
     audience,
