@@ -1322,34 +1322,52 @@ app.use('/api', requireUser({ audience, devEmail }), routes);
 Then replace the boot block at the bottom with:
 
 ```js
+// Fatal: the archive is the product. If it cannot be opened, or the temp
+// table it hosts can't be created, there is nothing to serve.
+let handle;
 try {
-  const handle = openDb();
+  handle = openDb();
   console.log(`opened ${DB_PATH}`);
-
-  const store = await createStore();
-  setStore(store);
   createAnnotationTable(handle);
-
-  const owner = devEmail ?? process.env.OWNER_EMAIL;
-  if (owner) {
-    // Best-effort: the archive is the product and stays readable even if the
-    // annotation store is unreachable.
-    try {
-      loadAnnotations(handle, await store.list(owner));
-    } catch (err) {
-      console.error(`could not load annotations: ${err.message}`);
-    }
-  }
 } catch (err) {
   console.error(`cannot open database at ${DB_PATH}: ${err.message}`);
   console.error('run `npm run build:db` first');
   process.exit(1);
 }
 
+// Non-fatal: annotations are a personal layer on top of the archive, not the
+// archive itself. Fail the request, not the process. If the store never gets
+// set, getStore() throws when called: reads keep returning null annotations
+// against the empty temp table, and writes surface a loud error rather than
+// silently no-op against nothing.
+try {
+  const store = await createStore();
+  setStore(store);
+
+  const owner = devEmail ?? process.env.OWNER_EMAIL;
+  if (owner) {
+    loadAnnotations(handle, await store.list(owner));
+  }
+} catch (err) {
+  console.error(`annotation store unavailable at boot: ${err.message}`);
+}
+
 app.listen(port, () => console.log(`api + ui listening on :${port}`));
 ```
 
 Top-level `await` is available: the file is an ES module.
+
+**The two blocks have deliberately different failure semantics**, and an earlier
+draft of this step got it wrong by putting `createStore()` in the fatal block.
+The spec says a failing annotation store must degrade, not kill the process —
+"the archive is the product and is still fully readable". With one try block,
+a permissions error creating the annotation store printed `cannot open database
+at <archive path>` and `run npm run build:db first` *after the archive had
+already opened successfully*, then exited: wrong path, useless advice, site
+down. `createAnnotationTable` stays in the fatal block on purpose — the read
+routes `LEFT JOIN annotations`, so the table must exist even when empty, or a
+store failure would break reads too. `handle` is declared with `let` outside
+both blocks so the non-fatal block can still reach it.
 
 The static-file and catch-all handlers stay **outside** `requireUser` for now; Task 10 puts the whole origin behind IAP at the platform level, so the bundle needs no app-level gate.
 
