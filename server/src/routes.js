@@ -1,6 +1,8 @@
 import express from 'express';
 import { db } from './db.js';
 import { norm, likeEscape } from './normalize.js';
+import { ANNOTATION_COLUMNS, ANNOTATION_JOIN } from './annotations/temp-table.js';
+import { withAnnotation } from './annotations/index.js';
 
 const router = express.Router();
 
@@ -46,16 +48,18 @@ router.get('/series/:slug/shows', (req, res, next) => {
   try {
     const p = page(req.query), ps = size(req.query);
     const rows = db().prepare(`
-      SELECT sh.id, sh.content_id, sh.title, sh.show_date, sh.url, sh.track_count
+      SELECT sh.id, sh.content_id, sh.title, sh.show_date, sh.url, sh.track_count,
+             ${ANNOTATION_COLUMNS}
       FROM shows sh
       JOIN series s ON s.id = sh.series_id
+      ${ANNOTATION_JOIN}
       WHERE s.slug = ?
       ORDER BY sh.show_date DESC, sh.id DESC
       LIMIT ? OFFSET ?`).all(req.params.slug, ps, (p - 1) * ps);
     const { total } = db().prepare(
       `SELECT COUNT(*) AS total FROM shows sh JOIN series s ON s.id = sh.series_id WHERE s.slug = ?`
     ).get(req.params.slug);
-    res.json({ rows, total, page: p, pageSize: ps });
+    res.json({ rows: rows.map(withAnnotation), total, page: p, pageSize: ps });
   } catch (e) { next(e); }
 });
 
@@ -64,15 +68,19 @@ router.get('/series/:slug/shows', (req, res, next) => {
 router.get('/shows/:id', (req, res, next) => {
   try {
     const show = db().prepare(`
-      SELECT sh.*, s.name AS series_name, s.slug AS series_slug
-      FROM shows sh JOIN series s ON s.id = sh.series_id
+      SELECT sh.*, s.name AS series_name, s.slug AS series_slug,
+             ${ANNOTATION_COLUMNS}
+      FROM shows sh
+      JOIN series s ON s.id = sh.series_id
+      ${ANNOTATION_JOIN}
       WHERE sh.id = ?`).get(req.params.id);
     if (!show) return res.status(404).json({ error: 'not found' });
     const tracks = db().prepare(`
       SELECT t.id, t.position, t.title, a.id AS artist_id, a.name AS artist
       FROM tracks t LEFT JOIN artists a ON a.id = t.artist_id
       WHERE t.show_id = ? ORDER BY t.position`).all(req.params.id);
-    res.json({ show, tracks });
+    const { annotation, ...rest } = withAnnotation(show);
+    res.json({ show: rest, tracks, annotation });
   } catch (e) { next(e); }
 });
 

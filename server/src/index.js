@@ -4,12 +4,27 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import routes from './routes.js';
 import { openDb, db, DB_PATH } from './db.js';
+import { createStore, setStore } from './annotations/index.js';
+import { createAnnotationTable, loadAnnotations } from './annotations/temp-table.js';
+import { requireUser } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 app.use(express.json());
-app.use('/api', routes);
+
+// On Cloud Run, IAP is the only gate; refuse to boot without the audience
+// rather than serving the archive to anyone who asks.
+const onCloudRun = Boolean(process.env.K_SERVICE);
+const audience = process.env.IAP_AUDIENCE || null;
+const devEmail = onCloudRun ? null : (process.env.DEV_USER_EMAIL || 'dev@localhost');
+
+if (onCloudRun && !audience) {
+  console.error('IAP_AUDIENCE is unset. Refusing to start unauthenticated.');
+  process.exit(1);
+}
+
+app.use('/api', requireUser({ audience, devEmail }), routes);
 
 app.get('/healthz', (_req, res) => {
   try {
@@ -38,8 +53,23 @@ app.use((err, _req, res, _next) => {
 const port = Number(process.env.PORT || 3000);
 
 try {
-  openDb();
+  const handle = openDb();
   console.log(`opened ${DB_PATH}`);
+
+  const store = await createStore();
+  setStore(store);
+  createAnnotationTable(handle);
+
+  const owner = devEmail ?? process.env.OWNER_EMAIL;
+  if (owner) {
+    // Best-effort: the archive is the product and stays readable even if the
+    // annotation store is unreachable.
+    try {
+      loadAnnotations(handle, await store.list(owner));
+    } catch (err) {
+      console.error(`could not load annotations: ${err.message}`);
+    }
+  }
 } catch (err) {
   console.error(`cannot open database at ${DB_PATH}: ${err.message}`);
   console.error('run `npm run build:db` first');
