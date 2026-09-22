@@ -188,6 +188,18 @@ test('an unreachable JWKS still refuses the request', async () => {
   server.close();
 });
 
+test('a misbehaving JWKS endpoint is 503, not 403', async () => {
+  // createRemoteJWKSet throws a bare JOSEError (code ERR_JOSE_GENERIC, no
+  // ERR_JWKS_ prefix) when Google's endpoint returns a non-200 or a body
+  // that won't parse as JSON. A prefix match on ERR_JOSE_ once misclassified
+  // this as the client's fault; it must read as an outage, not a rejection.
+  const misbehaving = () => { throw Object.assign(new Error('bad response'), { code: 'ERR_JOSE_GENERIC' }); };
+  const { server, base } = await serve(requireUser({ audience: AUDIENCE, keys: misbehaving }));
+  const res = await fetch(`${base}/whoami`, { headers: { [IAP_HEADER]: await assertion() } });
+  assert.equal(res.status, 503);
+  server.close();
+});
+
 test('devEmail bypasses verification entirely', async () => {
   const { server, base } = await serve(requireUser({ devEmail: 'dev@localhost' }));
   const res = await fetch(`${base}/whoami`);

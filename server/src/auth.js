@@ -84,7 +84,8 @@ function statusFor(err) {
   const tokenFault =
     code.startsWith('ERR_JWT_') ||
     code.startsWith('ERR_JWS_') ||
-    code.startsWith('ERR_JOSE_') ||
+    code === 'ERR_JOSE_ALG_NOT_ALLOWED' ||
+    code === 'ERR_JOSE_NOT_SUPPORTED' ||
     code === 'ERR_JWKS_NO_MATCHING_KEY' ||
     /email claim/.test(err.message);
   return tokenFault ? 403 : 503;
