@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSqliteStore } from './sqlite.js';
+import { unavailable } from './store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -14,7 +15,11 @@ let store = null;
 export function setStore(s) { store = s; }
 
 export function getStore() {
-  if (!store) throw new Error('annotation store not initialised; call createStore() first');
+  // Not-yet-initialised is the same client-visible situation as a driver that
+  // failed mid-call: the archive still works, the annotation layer does not.
+  // Routing it through unavailable() gives it the same ANNOTATION_STORE_UNAVAILABLE
+  // code, so the error handler answers 502 rather than a bug-flavoured 500.
+  if (!store) throw unavailable(new Error('not initialised at boot'));
   return store;
 }
 

@@ -208,7 +208,10 @@ router.patch('/shows/:contentId/annotation', async (req, res, next) => {
     if (!check.ok) return res.status(400).json({ error: check.error });
 
     // Durable store first. Only once it has accepted the write does the temp
-    // table move, so the two cannot disagree.
+    // table move, so the two cannot disagree. Known residual: if
+    // upsertAnnotationRow itself throws after merge() already committed, the
+    // store and temp table could disagree. Accepted rather than guarded —
+    // same process, same connection, temp table this process just created.
     const merged = await getStore().merge(req.user.email, contentId, check.patch);
     upsertAnnotationRow(db(), contentId, merged);
     res.json(merged);
@@ -220,6 +223,9 @@ router.delete('/shows/:contentId/annotation', async (req, res, next) => {
     const contentId = requireShow(req, res);
     if (contentId === null) return;
 
+    // Same order and the same residual as the PATCH handler above: store
+    // first, temp table only on success; a post-commit temp-table throw here
+    // is accepted, not guarded.
     await getStore().remove(req.user.email, contentId);
     removeAnnotationRow(db(), contentId);
     res.status(204).end();
