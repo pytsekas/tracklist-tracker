@@ -257,10 +257,15 @@ verifies it against Google's public keys at
 algorithm negotiation**, `exp` and `iat` checked, and the audience pinned to
 this service. The email claim becomes the annotation owner.
 
-The audience string for direct Cloud Run IAP is project- and service-specific.
-Its exact format is to be read from Google's documentation during
-implementation and emitted as a Terraform output rather than hand-assembled —
-guessing it produces an auth check that passes for the wrong service.
+The audience string for direct Cloud Run IAP is project- and service-specific:
+
+    /projects/PROJECT_NUMBER/locations/REGION/services/SERVICE_NAME
+
+which is a different shape from the App Engine (`/projects/N/apps/ID`) and
+backend-service (`/projects/N/global/backendServices/ID`) forms most sample
+code uses. Terraform emits it as an `iap_audience` output and passes it to the
+container as `IAP_AUDIENCE`, rather than the server assembling it from parts —
+a hand-built audience is an auth check that passes for the wrong service.
 
 Verifying the assertion is belt-and-braces given that all ingress goes through
 IAP, and it is kept because the alternative — trusting
@@ -287,7 +292,7 @@ someone changes `ingress` or puts something in front of the service.
 | --- | --- |
 | `server/src/index.js` | mount `auth`, build the temp table after `openDb()` |
 | `server/src/routes.js` | joins, annotation fields, new filters, write routes |
-| `server/package.json` | `+@google-cloud/firestore` |
+| `server/package.json` | `+@google-cloud/firestore`, `+jose` |
 | `client/src/api.js` | `me`, `patchAnnotation`, `deleteAnnotation`, `tags` |
 | `client/src/App.jsx` | `/mine` route and nav item |
 | `client/src/pages/Show.jsx` | mount the editor |
@@ -295,6 +300,7 @@ someone changes `ingress` or puts something in front of the service.
 | `infra/cloud_run.tf` | `iap_enabled`, IAP service agent invoker |
 | `infra/main.tf` | Firestore database, `roles/datastore.user`, IAP member |
 | `infra/variables.tf` | `owner_email`; `max_instances` 3→1; `allow_public_access` default false |
+| `infra/outputs.tf` | `iap_audience`, for verifying the assertion |
 | `.github/workflows/ci.yml` | IAP-authenticated post-deploy healthcheck |
 | `.gitignore` | `data/annotations.sqlite` |
 | `README.md` | auth, the annotation store, the new env vars |
@@ -351,7 +357,7 @@ databases, no mocks.
 | `annotations-temp-table.test.js` | population, single-row update, the join |
 | `annotations-routes.test.js` | partial update, upsert, delete, every validation rejection, and that a key absent from the body does not clear its field |
 | `auth.test.js` | assertion verification: good, expired, wrong audience, wrong algorithm, absent |
-| `routes-ordering.test.js` | extended — the four filters, paginated |
+| `annotations-filters.test.js` | the four filters, combined and paginated |
 
 The `alg` test matters more than its size suggests: it is the one that catches
 an `alg: none` assertion being accepted.
