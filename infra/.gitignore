@@ -1,0 +1,7 @@
+# .terraform.lock.hcl is deliberately not here: committing it pins the provider
+# versions and checksums everyone applies with.
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+crash.log

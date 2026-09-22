@@ -30,6 +30,9 @@ COPY --from=server-deps /app/server ./server
 COPY package.json ./
 COPY server/src ./server/src
 COPY --from=client-build /app/client/dist ./client/dist
+# The archive itself. Built from the CSVs by `npm run build:db`, committed,
+# and opened read-only at runtime — the image is self-contained.
+COPY data/tracklists.sqlite ./data/tracklists.sqlite
 
 RUN chown -R node:node /app
 USER node

@@ -5,8 +5,9 @@ Popikroonikad, Sander Varusk, Varuski teematund, Vibratsioon, Eesti Pops) in one
 
 * **API** — Express (Node 22, ES modules)
 * **UI** — React 18 + Vite, React Router
-* **Data** — SQLite, built from the CSVs in `data/csv/` at image build time
-* **Import** — `npm run build:db`; re-scraping means committing new CSVs
+* **Data** — SQLite, committed at `data/tracklists.sqlite` and baked into the image
+* **Import** — `npm run build:db` rebuilds it from CSVs; commit the result
+* **Deploy** — GitHub Actions builds every push to `main` onto Cloud Run (`infra/`)
 
 ---
 
@@ -33,21 +34,13 @@ Popikroonikad, Sander Varusk, Varuski teematund, Vibratsioon, Eesti Pops) in one
 
 ## Quick start (Docker)
 
-> **Not working yet.** `docker-compose.yml` and the `Dockerfile` still describe
-> the old two-container MariaDB setup — the image neither builds nor ships the
-> SQLite database, so the container exits at boot with
-> `cannot open database ... run npm run build:db first`.
-> Until they are updated, use [Running locally without Docker](#running-locally-without-docker).
-
-Once the image build is updated, the whole stack is a single container:
+One container. The SQLite archive is baked into the image at build time, so
+there is no database service, no volume and nothing to wait for.
 
 ```bash
 docker compose up -d --build
 open http://localhost:3000
 ```
-
-The database is built from `data/csv/` during the image build and shipped inside
-the image, so there is nothing to wait for and no volume to manage.
 
 ```bash
 docker compose logs -f app    # follow the API log
@@ -56,11 +49,11 @@ docker compose down           # stop
 
 ## Running locally without Docker
 
-Needs Node 22+. No database server.
+Needs Node 22+. No database server, and no import step — `data/tracklists.sqlite`
+is committed.
 
 ```bash
 npm install
-npm run build:db              # data/csv/*.csv -> data/tracklists.sqlite
 npm run dev                   # API on :3000, Vite dev server on :5173
 ```
 
@@ -83,12 +76,36 @@ only one port.
 
 ---
 
+## Build and deploy
+
+`.github/workflows/ci.yml` runs on every push to `main`, every pull request
+against it, and on demand:
+
+| Job | Pull request | Push to `main` |
+| --- | --- | --- |
+| **Test and build** | `npm ci`, `npm test`, `npm run build` | same |
+| **Container image** | built, nothing published | pushed to Artifact Registry as `:<sha>` and `:latest` |
+| **Deploy to Cloud Run** | skipped | new revision, then `/healthz` is curled against the live URL |
+
+The GCP half is Terraform, in [`infra/`](infra/README.md) — Artifact Registry, a
+Cloud Run service, and workload identity federation, so the workflow signs in
+with a short-lived GitHub identity rather than a stored service-account key.
+Read that file before the first deploy; it is one `terraform apply` plus one
+command to set the repository variables.
+
+Until those variables exist the workflow still passes: it tests, builds, and
+builds the image, then logs a notice saying it is not publishing.
+
 ## How importing works
 
-The CSVs live in `data/csv/` and are committed. `npm run build:db` reads them
-all and writes `data/tracklists.sqlite`. The Docker build will run the same
-command once the image build is updated (see Quick start above), so the image
-ships a database built from exactly the CSVs in the commit it was built from.
+`data/tracklists.sqlite` is the committed artefact, and the Docker build copies
+it straight into the image — so the container ships exactly the archive that was
+in the commit it was built from, and starts with no import step.
+
+The database itself is produced by `npm run build:db`, which reads
+`data/csv/*.csv` and writes `data/tracklists.sqlite`. **The CSVs are not in this
+repository**; they are scrape output. Keep them wherever you scrape, drop them
+into `data/csv/`, rebuild, and commit the resulting `.sqlite`.
 
 The importer figures out what a file is from its **header row**, and which
 series it belongs to from its **filename**:

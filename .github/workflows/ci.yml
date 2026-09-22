@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push to the same branch makes the running build obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Test and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22 is what the runtime image ships (see Dockerfile).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build the client bundle
+        run: npm run build
+
+      - name: Upload the client bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-dist
+          path: client/dist
+          retention-days: 7
+
+  image:
+    name: Container image
+    runs-on: ubuntu-latest
+    needs: build
+
+    permissions:
+      contents: read
+      id-token: write # to sign in to Google Cloud without a stored key
+
+    # Pull requests build the image to prove the Dockerfile still works, but
+    # only main publishes. If the GCP variables are unset the whole deploy half
+    # of this pipeline stays dormant, so the repo works before infra exists.
+    env:
+      PUBLISHES: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.GCP_WIF_PROVIDER != '' }}
+
+    # `env` is not a context job outputs can read, so the flag is re-emitted by
+    # the tag step below.
+    outputs:
+      publishes: ${{ steps.tags.outputs.publishes }}
+      image: ${{ steps.tags.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to Google Cloud
+        if: env.PUBLISHES == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - name: Set up gcloud
+        if: env.PUBLISHES == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Let Docker push to Artifact Registry
+        if: env.PUBLISHES == 'true'
+        env:
+          REGION: ${{ vars.GCP_REGION }}
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Work out the image tags
+        id: tags
+        env:
+          REGION: ${{ vars.GCP_REGION }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REPOSITORY: ${{ vars.GCP_REPOSITORY }}
+          SERVICE: ${{ vars.GCP_SERVICE }}
+        run: |
+          if [ "${PUBLISHES}" = "true" ]; then
+            base="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${SERVICE}"
+          else
+            base="tracklist-browser"
+            echo "::notice::GCP variables are not set, so this run only builds the image. See infra/README.md."
+          fi
+
+          {
+            echo "publishes=${PUBLISHES}"
+            echo "image=${base}:${GITHUB_SHA}"
+            echo "tags<<TAGS"
+            echo "${base}:${GITHUB_SHA}"
+            echo "${base}:latest"
+            echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ env.PUBLISHES == 'true' }}
+          tags: ${{ steps.tags.outputs.tags }}
+          # Cloud Run refuses an image index, which is what buildx produces once
+          # it attaches provenance attestations.
+          provenance: false
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+    needs: image
+    if: needs.image.outputs.publishes == 'true'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+      - name: Sign in to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - name: Deploy the new revision
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ vars.GCP_SERVICE }}
+          region: ${{ vars.GCP_REGION }}
+          image: ${{ needs.image.outputs.image }}
+
+      # The revision only takes traffic once /healthz passes, so a failure here
+      # means the live site is broken, not merely the new build.
+      - name: Smoke-test the deployment
+        env:
+          SERVICE_URL: ${{ steps.deploy.outputs.url }}
+        run: curl --fail --silent --show-error "${SERVICE_URL}/healthz"

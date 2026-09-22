@@ -5,4 +5,6 @@ client/dist/
 .DS_Store
 data/*.sqlite
 data/*.sqlite.building
+# ...except the built archive, which ships inside the image.
+!data/tracklists.sqlite
 .omc/

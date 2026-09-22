@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars and fill in the project id.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+
+project_id = "tracklist-browser-prod"
+
+# Everything below already defaults to these values; uncomment to change one.
+#
+# region              = "europe-north1"
+# service_name        = "tracklist-browser"
+# repository_id       = "containers"
+# github_repository   = "pytsekas/tracklist-tracker"
+# deploy_branch       = "main"
+# allow_public_access = true
+# min_instances       = 0
+# max_instances       = 3
