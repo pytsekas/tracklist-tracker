@@ -89,6 +89,7 @@ export default function Annotator({ contentId, annotation, onChange }) {
 
       <textarea className="notes" rows={3} value={notes}
                 placeholder="Notes about this episode…"
+                aria-label="Notes about this episode"
                 onChange={e => onNotes(e.target.value)} />
 
       <div className="annotator-row">
@@ -101,6 +102,7 @@ export default function Annotator({ contentId, annotation, onChange }) {
         ))}
         <form onSubmit={addTag}>
           <input value={tagDraft} placeholder="Add a tag"
+                 aria-label="Add a tag"
                  onChange={e => setTagDraft(e.target.value)} />
         </form>
       </div>
