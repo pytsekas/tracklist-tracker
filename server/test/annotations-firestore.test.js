@@ -77,3 +77,48 @@ test('a hung call times out as ANNOTATION_STORE_UNAVAILABLE', async () => {
     () => store.list(OWNER),
     err => err.code === 'ANNOTATION_STORE_UNAVAILABLE');
 });
+
+// A call that wins the race well inside its deadline must not log the
+// "deadline had already fired" warning — it did not fire. This is the case
+// the fix wave's own first pass got wrong: it warned on every successful
+// call, not just late ones, because the log line hung off the promise
+// resolving at all rather than off the timer having actually gone first.
+test('a call that resolves in time logs nothing', async (t) => {
+  const warn = t.mock.method(console, 'warn');
+  const client = {
+    collection: () => ({
+      doc: () => ({
+        collection: () => ({ get: async () => ({ docs: [] }) }),
+      }),
+    }),
+  };
+  await createFirestoreStore({ projectId: 'p', client, timeoutMs: 5000 }).list(OWNER);
+  assert.equal(warn.mock.callCount(), 0);
+});
+
+test('a call that times out but later succeeds logs the deadline warning exactly once', async (t) => {
+  const warn = t.mock.method(console, 'warn');
+  let resolveLate;
+  const late = new Promise(resolve => { resolveLate = resolve; });
+  const client = {
+    collection: () => ({
+      doc: () => ({
+        collection: () => ({ get: () => late }),
+      }),
+    }),
+  };
+  const store = createFirestoreStore({ projectId: 'p', client, timeoutMs: 20 });
+  await assert.rejects(
+    () => store.list(OWNER),
+    err => err.code === 'ANNOTATION_STORE_UNAVAILABLE');
+
+  // The abandoned call goes on to succeed after the deadline already fired —
+  // exactly the case the warning exists to surface.
+  resolveLate({ docs: [] });
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(warn.mock.callCount(), 1);
+  assert.match(
+    warn.mock.calls[0].arguments[0],
+    /Firestore list completed after its 20ms deadline had already fired/);
+});

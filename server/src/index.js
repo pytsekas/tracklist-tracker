@@ -55,7 +55,18 @@ if (onCloudRun && !owner) {
 // process, enforced here in the one place that already knows who it is, is
 // the honest single-user one.
 function requireOwner(req, res, next) {
-  if (req.user.email !== owner) return res.status(403).json({ error: 'forbidden' });
+  // Case-insensitively: Google account emails aren't case-sensitive, so an
+  // OWNER_EMAIL configured with different casing than IAP reports must not
+  // lock the real owner out. `owner` can be unset (see the fatal check above,
+  // which only applies on Cloud Run) — guarded rather than compared directly,
+  // so a missing owner 403s instead of throwing on `undefined.toLowerCase()`.
+  // Warn on a mismatch the same way auth.js already does for a rejected
+  // assertion — a bare 403 here would otherwise look like a bug rather than a
+  // configuration mismatch, with no way to tell them apart from the log.
+  if (!owner || req.user.email.toLowerCase() !== owner.toLowerCase()) {
+    console.warn(`rejected non-owner ${req.user.email} (owner is ${owner ?? 'unset'})`);
+    return res.status(403).json({ error: 'forbidden' });
+  }
   next();
 }
 

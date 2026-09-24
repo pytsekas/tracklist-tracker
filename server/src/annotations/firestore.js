@@ -27,20 +27,25 @@ const FIRESTORE_TIMEOUT_MS = 5000;
 
 function withTimeout(promise, ms, label) {
   let timer;
+  let firedLate = false;
   const timedOut = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Firestore call timed out after ${ms}ms`)), ms);
+    timer = setTimeout(() => {
+      firedLate = true;
+      reject(new Error(`Firestore call timed out after ${ms}ms`));
+    }, ms);
   });
   return Promise.race([promise, timedOut]).finally(() => {
     clearTimeout(timer);
     // The loser is a real call the SDK may still be retrying in the
     // background, and an abandoned runTransaction can still go on to commit —
     // the client already got its 502 and moved on, so a late success here
-    // must not surface as an unhandled rejection. It is worth a log line of
-    // its own, though: this is the one place that can tell "the write
-    // probably landed after all" apart from "it was rejected outright", and
-    // that distinction is otherwise invisible once the request has returned.
+    // must not surface as an unhandled rejection. The warning is gated on
+    // `firedLate`, not just on `promise` resolving: without that guard, an
+    // ordinary call that wins the race well inside `ms` would also log "after
+    // its deadline had already fired", which is false, and at request rate
+    // that false line would drown out the one case this exists to catch.
     promise.then(
-      () => console.warn(`Firestore ${label} completed after its ${ms}ms deadline had already fired`),
+      () => { if (firedLate) console.warn(`Firestore ${label} completed after its ${ms}ms deadline had already fired`); },
       () => {});
   });
 }
