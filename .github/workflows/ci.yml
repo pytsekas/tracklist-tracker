@@ -148,6 +148,27 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
 
+      # A second, conditional sign-in: `gcloud auth print-identity-token`
+      # against WIF-impersonated ADC is not the documented way to mint an
+      # IAP-audienced ID token and may not work, so this asks the auth action
+      # itself for one, scoped to the IAP client id. Conditional so the whole
+      # step is a no-op — no failed sign-in — before GCP_IAP_CLIENT_ID exists,
+      # matching how the rest of this workflow stays dormant before infra does.
+      - name: Mint an IAP identity token
+        id: iap
+        if: vars.GCP_IAP_CLIENT_ID != ''
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+          token_format: 'id_token'
+          id_token_audience: ${{ vars.GCP_IAP_CLIENT_ID }}
+          id_token_include_email: true
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Deploy the new revision
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
@@ -156,9 +177,22 @@ jobs:
           region: ${{ vars.GCP_REGION }}
           image: ${{ needs.image.outputs.image }}
 
-      # The revision only takes traffic once /healthz passes, so a failure here
-      # means the live site is broken, not merely the new build.
+      # IAP now sits in front of the service, so an unauthenticated curl gets a
+      # 403 no matter how healthy the revision is. The deploy service account is
+      # granted roles/iap.httpsResourceAccessor in infra/main.tf; the token
+      # minted above authenticates as it.
+      #
+      # The revision only takes traffic once the startup probe passes, so a
+      # failure here means the live site is broken, not merely the new build.
       - name: Smoke-test the deployment
         env:
           SERVICE_URL: ${{ steps.deploy.outputs.url }}
-        run: curl --fail --silent --show-error "${SERVICE_URL}/healthz"
+          ID_TOKEN: ${{ steps.iap.outputs.id_token }}
+        run: |
+          if [ -z "${ID_TOKEN}" ]; then
+            echo "::notice::GCP_IAP_CLIENT_ID is unset; skipping the authenticated smoke test."
+            exit 0
+          fi
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${ID_TOKEN}" \
+            "${SERVICE_URL}/healthz"

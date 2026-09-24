@@ -1,8 +1,12 @@
-# Copy to terraform.tfvars and fill in the project id.
+# Copy to terraform.tfvars and fill in the project id and owner email.
 #
 #   cp terraform.tfvars.example terraform.tfvars
 
 project_id = "tracklist-browser-prod"
+
+# The only Google account IAP will let through, and whose annotations the
+# server loads. Required — there is no default.
+owner_email = "you@example.com"
 
 # Everything below already defaults to these values; uncomment to change one.
 #
@@ -11,6 +15,7 @@ project_id = "tracklist-browser-prod"
 # repository_id       = "containers"
 # github_repository   = "pytsekas/tracklist-tracker"
 # deploy_branch       = "main"
-# allow_public_access = true
+# allow_public_access = false
 # min_instances       = 0
-# max_instances       = 3
+# max_instances       = 1
+# firestore_location  = "europe-north1"   # or "eur3" for a Europe multi-region

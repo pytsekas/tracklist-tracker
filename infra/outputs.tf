@@ -23,6 +23,16 @@ output "deploy_service_account" {
   value       = google_service_account.deployer.email
 }
 
+output "iap_audience" {
+  description = "The aud claim the server verifies on every IAP assertion."
+  value       = local.iap_audience
+}
+
+output "owner_email" {
+  description = "The Google account allowed through IAP, and whose annotations the server loads."
+  value       = var.owner_email
+}
+
 output "github_variables" {
   description = "Run these once to point the workflow at this project."
   value       = <<-EOT

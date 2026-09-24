@@ -6,8 +6,10 @@ Popikroonikad, Sander Varusk, Varuski teematund, Vibratsioon, Eesti Pops) in one
 * **API** — Express (Node 22, ES modules)
 * **UI** — React 18 + Vite, React Router
 * **Data** — SQLite, committed at `data/tracklists.sqlite` and baked into the image
+* **Annotations** — Firestore; listened / rating / notes / tags, keyed on `content_id`
 * **Import** — `npm run build:db` rebuilds it from CSVs; commit the result
 * **Deploy** — GitHub Actions builds every push to `main` onto Cloud Run (`infra/`)
+* **Access** — the whole site is behind Cloud Run IAP; one Google account
 
 ---
 
@@ -41,6 +43,9 @@ there is no database service, no volume and nothing to wait for.
 docker compose up -d --build
 open http://localhost:3000
 ```
+
+`K_SERVICE` is only set by Cloud Run, so it is unset here: the container runs
+with the SQLite annotation driver and no IAP, signed in as `dev@localhost`.
 
 ```bash
 docker compose logs -f app    # follow the API log
@@ -85,7 +90,7 @@ against it, and on demand:
 | --- | --- | --- |
 | **Test and build** | `npm ci`, `npm test`, `npm run build` | same |
 | **Container image** | built, nothing published | pushed to Artifact Registry as `:<sha>` and `:latest` |
-| **Deploy to Cloud Run** | skipped | new revision, then `/healthz` is curled against the live URL |
+| **Deploy to Cloud Run** | skipped | new revision, then `/healthz` is curled against the live URL — with an IAP identity token once `GCP_IAP_CLIENT_ID` is set, otherwise the step logs a notice and passes |
 
 The GCP half is Terraform, in [`infra/`](infra/README.md) — Artifact Registry, a
 Cloud Run service, and workload identity federation, so the workflow signs in
@@ -154,6 +159,71 @@ on purpose — `õ`, `ä`, `ö` and `ü` are distinct Estonian letters, so `magi
 not match `Mägi`.
 
 To change the schema: edit `schema.sql`, then re-run `npm run build:db`.
+
+## Annotations
+
+The archive is read-only and rebuilt wholesale by `npm run build:db`, so
+anything personal has to live outside it. Annotations are stored separately,
+one document per annotated show, keyed on `content_id` — ERR's own episode id,
+which is stable across a re-scrape in a way the autoincrement `shows.id` is not.
+
+```
+annotations/{email}/shows/{content_id}
+  listened, listened_at, rating, notes, want_to_listen, tags[], updated_at
+```
+
+At boot the server loads them into a `TEMP TABLE` on the archive's read-only
+connection. That is the whole trick: SQLite keeps its temp database in a
+separate file, so a read-only main database does not forbid writing to it, and
+every route can `LEFT JOIN` annotations and keep filtering, sorting and
+pagination in SQL. (`ATTACH ':memory:'` on the same connection is *not*
+allowed — it fails with "attempt to write a readonly database".)
+
+Writes go to the durable store first and update the temp row only on success.
+The invariant that holds is one-directional, not "the two cannot disagree": the
+temp table never moves ahead of the durable store, but the store can briefly be
+ahead of it — a call that times out (see `firestore.js`) can still commit after
+the request has already answered 502 and skipped the temp-table update. A cache
+that is behind is safe; a cache that is ahead is a lie. Either way, the next
+boot reconciles by reloading the temp table from the store. `max_instances` is
+1 for a related reason: the temp table is in-process, and a second instance
+would serve stale rows. That holds in steady state; a deploy can briefly run
+one instance of each revision, and it self-heals from there too — see the
+comment on `max_instances` in `infra/variables.tf` for the full reasoning.
+
+| Variable | Local | Cloud Run |
+| --- | --- | --- |
+| `ANNOTATIONS_DRIVER` | `sqlite` | `firestore` |
+| `DEV_USER_EMAIL` | your stand-in identity | ignored |
+| `IAP_AUDIENCE` | unused | required; the server refuses to boot without it. Terraform sets it on the service from `local.iap_audience` |
+| `OWNER_EMAIL` | unused | whose annotations to load at boot |
+
+`npm test` and `npm run dev` use the SQLite driver, so neither needs a cloud
+project, credentials or an emulator.
+
+`DEV_USER_EMAIL` and the `ANNOTATIONS_*` variables are read straight from the
+process's runtime variables — nothing in this project loads `.env.example`'s
+copy of them automatically. Set them yourself: `DEV_USER_EMAIL=you@example.com
+npm run dev`, or an `environment:` entry under the app service in
+`docker-compose.yml`.
+
+## Access
+
+The site is behind [Cloud Run direct IAP](https://docs.cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run) —
+Google sign-in, one allowlisted account, no load balancer and no added cost.
+There is no password and no session store: IAP gates the whole origin before
+any request reaches the container, and the server additionally verifies the
+signed assertion itself (ES256 only, issuer `https://cloud.google.com/iap`,
+audience pinned to this service) on every `/api` request — the only routes
+that check it themselves, since IAP is what protects the static bundle.
+
+Grant someone access by adding them to `google_iap_web_cloud_run_service_iam_member`
+in `infra/main.tf`. Note that they would see *your* annotations — this is a
+single-user design; see the spec's non-goals.
+
+Rolling this out from scratch, including a Critical Terraform prerequisite
+that a green `apply` does not surface on its own, is documented in
+[`infra/README.md`](infra/README.md#rollout-turning-on-iap).
 
 ## API
 

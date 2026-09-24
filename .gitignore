@@ -7,4 +7,8 @@ data/*.sqlite
 data/*.sqlite.building
 # ...except the built archive, which ships inside the image.
 !data/tracklists.sqlite
+# Local annotation store for `npm run dev`. Production uses Firestore.
+data/annotations.sqlite
+data/annotations.sqlite-wal
+data/annotations.sqlite-shm
 .omc/

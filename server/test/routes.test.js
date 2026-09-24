@@ -9,26 +9,41 @@ import { fileURLToPath } from 'node:url';
 import { buildDatabase } from '../src/build-db.js';
 import { openDb } from '../src/db.js';
 import routes from '../src/routes.js';
+import { createSqliteStore } from '../src/annotations/sqlite.js';
+import { createAnnotationTable, loadAnnotations } from '../src/annotations/temp-table.js';
+import { requireUser } from '../src/auth.js';
+import { setStore } from '../src/annotations/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_CSV = path.join(__dirname, 'fixtures/csv');
+
+const DEV_USER = 'dev@localhost';
+let store;
+let handle;
 
 let server;
 let base;
 
 before(async () => {
-  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tlb-routes-')), 'test.sqlite');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tlb-routes-'));
+  const out = path.join(dir, 'test.sqlite');
   buildDatabase({ csvDir: FIXTURE_CSV, outPath: out });
-  openDb(out);
+  handle = openDb(out);
+
+  store = createSqliteStore(path.join(dir, 'annotations.sqlite'));
+  setStore(store);
+  createAnnotationTable(handle);
+  loadAnnotations(handle, await store.list(DEV_USER));
 
   const app = express();
-  app.use('/api', routes);
+  app.use(express.json());
+  app.use('/api', requireUser({ devEmail: DEV_USER }), routes);
   server = app.listen(0);
   await once(server, 'listening');
   base = `http://127.0.0.1:${server.address().port}`;
 });
 
-after(() => server?.close());
+after(() => { server?.close(); store?.close(); handle?.close(); });
 
 // Tolerant of non-JSON bodies on purpose: an unmatched route yields Express's
 // default text/html 404, and a bare res.json() would throw SyntaxError inside
@@ -143,4 +158,37 @@ test('the import endpoints are gone', async () => {
 
   const res = await fetch(`${base}/api/import`, { method: 'POST' });
   assert.equal(res.status, 404);
+});
+
+test('GET /api/series/:slug/shows returns a null annotation when untouched', async () => {
+  const { body } = await get('/api/series/testshow/shows');
+  assert.ok(body.rows.every(r => r.annotation === null));
+});
+
+test('GET /api/shows/:id returns a null annotation when untouched', async () => {
+  const { body: list } = await get('/api/series/testshow/shows');
+  const { body } = await get(`/api/shows/${list.rows[0].id}`);
+  assert.equal(body.annotation, null);
+});
+
+test('an annotation in the temp table surfaces on both read routes', async () => {
+  await store.merge(DEV_USER, 1610000001, { listened: true, rating: 4, tags: ['suvi'] });
+  loadAnnotations(handle, await store.list(DEV_USER));
+
+  const { body: list } = await get('/api/series/testshow/shows');
+  const row = list.rows.find(r => r.content_id === 1610000001);
+  assert.equal(row.annotation.listened, true);
+  assert.equal(row.annotation.rating, 4);
+  assert.deepEqual(row.annotation.tags, ['suvi']);
+
+  const { body: one } = await get(`/api/shows/${row.id}`);
+  assert.equal(one.annotation.listened, true);
+  assert.deepEqual(one.annotation.tags, ['suvi']);
+});
+
+test('annotations do not disturb the existing show fields', async () => {
+  const { body } = await get('/api/series/testshow/shows?page=1&pageSize=2');
+  assert.equal(body.total, 3);
+  assert.equal(body.rows.length, 2);
+  assert.equal(body.rows[0].content_id, 1610000003, 'still newest first');
 });

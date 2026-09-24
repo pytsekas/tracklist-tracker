@@ -5,14 +5,22 @@ locals {
   required_apis = [
     "artifactregistry.googleapis.com",
     "cloudresourcemanager.googleapis.com",
+    "firestore.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
+    "iap.googleapis.com",
     "run.googleapis.com",
     "sts.googleapis.com",
   ]
 
   registry_host = "${var.region}-docker.pkg.dev"
   image_base    = "${local.registry_host}/${var.project_id}/${var.repository_id}/${var.service_name}"
+
+  # IAP's Cloud Run audience form. NOT the App Engine (/projects/N/apps/ID) or
+  # backend-service (/projects/N/global/backendServices/ID) form that most IAP
+  # sample code uses; a wrong audience is a check that passes for the wrong
+  # service. See docs/superpowers/specs/2026-09-22-show-annotations-design.md.
+  iap_audience = "/projects/${data.google_project.this.number}/locations/${var.region}/services/${var.service_name}"
 }
 
 resource "google_project_service" "required" {
@@ -126,4 +134,75 @@ resource "google_service_account_iam_member" "deployer_acts_as_runtime" {
   service_account_id = google_service_account.runtime.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.deployer.email}"
+}
+
+# ---- the annotation store ---------------------------------------------------
+
+resource "google_firestore_database" "annotations" {
+  project     = var.project_id
+  name        = "(default)"
+  location_id = var.firestore_location
+  type        = "FIRESTORE_NATIVE"
+
+  # The archive is rebuildable from the CSVs; annotations are not. deletion_policy
+  # is pinned to PREVENT, independently of delete_protection_state above, so any
+  # delete-or-replace fails loudly instead of orphaning this database — which
+  # matters beyond `terraform destroy`: location_id is immutable, and editing
+  # firestore_location later forces a replacement. ABANDON would satisfy that
+  # replacement by silently detaching the old, still-billing database and
+  # creating a new empty one; PREVENT turns that into an error instead.
+  delete_protection_state = "DELETE_PROTECTION_ENABLED"
+  deletion_policy         = "PREVENT"
+
+  depends_on = [google_project_service.required]
+}
+
+# The runtime identity stops being role-less: it now reads and writes its own
+# annotations. Still nothing else.
+resource "google_project_iam_member" "runtime_firestore" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+# ---- IAP --------------------------------------------------------------------
+
+# IAP calls the service on the user's behalf, so it needs its own invoker grant.
+#
+# Enabling iap.googleapis.com does not provision the IAP service agent this
+# grant targets; Google only creates it via `gcloud beta services identity
+# create --service=iap.googleapis.com --project=<project>` (or implicitly from
+# the console), which is not a resource this provider exposes without adding
+# google-beta. That one-time command belongs to the rollout, not here — see
+# the rollout section of infra/README.md. Resource-level IAM on Cloud Run is
+# served by the Cloud Run Admin API, which does not reliably validate that a
+# member exists, so a green apply proves nothing: if the agent was never
+# created, this binding is recorded against an address nobody occupies and
+# every request fails to reach the backend once IAP is enabled.
+resource "google_cloud_run_v2_service_iam_member" "iap_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.app.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-iap.iam.gserviceaccount.com"
+
+  depends_on = [google_project_service.required]
+}
+
+# Who is allowed through the front door.
+resource "google_iap_web_cloud_run_service_iam_member" "owner" {
+  project                = var.project_id
+  location               = var.region
+  cloud_run_service_name = google_cloud_run_v2_service.app.name
+  role                   = "roles/iap.httpsResourceAccessor"
+  member                 = "user:${var.owner_email}"
+}
+
+# The deploy identity needs it too, or the post-deploy healthcheck 403s.
+resource "google_iap_web_cloud_run_service_iam_member" "deployer" {
+  project                = var.project_id
+  location               = var.region
+  cloud_run_service_name = google_cloud_run_v2_service.app.name
+  role                   = "roles/iap.httpsResourceAccessor"
+  member                 = "serviceAccount:${google_service_account.deployer.email}"
 }

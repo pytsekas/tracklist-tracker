@@ -3,6 +3,11 @@ variable "project_id" {
   description = "GCP project the registry and Cloud Run service live in."
 }
 
+variable "owner_email" {
+  type        = string
+  description = "The single Google account allowed through IAP, and the key annotations are stored under."
+}
+
 variable "region" {
   type        = string
   description = "Region for Artifact Registry and Cloud Run."
@@ -36,7 +41,7 @@ variable "deploy_branch" {
 variable "allow_public_access" {
   type        = bool
   description = "Grant roles/run.invoker to allUsers, making the site reachable without signing in."
-  default     = true
+  default     = false
 }
 
 variable "min_instances" {
@@ -48,7 +53,17 @@ variable "min_instances" {
 variable "max_instances" {
   type        = number
   description = "Ceiling on concurrent instances; also the ceiling on a surprise bill."
-  default     = 3
+  # This caps instances per revision, so one instance keeps the in-process
+  # annotation temp table authoritative only in steady state: during a deploy
+  # the old and new revisions can briefly run one each, and a read landing on
+  # the other can be a few seconds stale. It self-heals — the durable store is
+  # always correct, and each instance rebuilds its temp table from it at boot.
+  # A top-level `scaling { max_instance_count = 1 }` would target that gap by
+  # capping both revisions combined, but risks blocking the new revision from
+  # starting until the old one drains — and Cloud Run documents that it may
+  # temporarily exceed the max-instance limit during traffic migration anyway,
+  # so it's deliberately not used here.
+  default = 1
 }
 
 variable "cpu" {
@@ -77,4 +92,16 @@ variable "placeholder_image" {
     to the field.
   EOT
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
+}
+
+variable "firestore_location" {
+  type        = string
+  description = "Firestore location. Cannot be changed after the database is created."
+  # Regional, co-located with the Cloud Run service, rather than the eur3
+  # multi-region: lower latency, cheaper storage, and regional Firestore is
+  # already durable enough for one person's annotations. The multi-region's
+  # extra guarantee is surviving the loss of a whole region, which is not worth
+  # paying for here — though note these annotations are the one thing in this
+  # system that cannot be rebuilt, since the archive regenerates from the CSVs.
+  default = "europe-north1"
 }

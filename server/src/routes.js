@@ -1,6 +1,10 @@
 import express from 'express';
 import { db } from './db.js';
 import { norm, likeEscape } from './normalize.js';
+import { getStore, withAnnotation } from './annotations/index.js';
+import { validatePatch } from './annotations/store.js';
+import { upsertAnnotationRow, removeAnnotationRow, ANNOTATION_JOIN, ANNOTATION_COLUMNS }
+  from './annotations/temp-table.js';
 
 const router = express.Router();
 
@@ -45,17 +49,47 @@ router.get('/series', (_req, res, next) => {
 router.get('/series/:slug/shows', (req, res, next) => {
   try {
     const p = page(req.query), ps = size(req.query);
-    const rows = db().prepare(`
-      SELECT sh.id, sh.content_id, sh.title, sh.show_date, sh.url, sh.track_count
+    const where = ['s.slug = ?'], args = [req.params.slug];
+
+    // COALESCE, because an unannotated show LEFT JOINs to NULL and NULL = 0
+    // is NULL, not true — without it "unlistened" would return nothing.
+    if (req.query.listened === 'true')  where.push('COALESCE(a.listened, 0) = 1');
+    if (req.query.listened === 'false') where.push('COALESCE(a.listened, 0) = 0');
+    if (req.query.want === 'true')      where.push('COALESCE(a.want_to_listen, 0) = 1');
+
+    if (req.query.ratingMin) {
+      const min = Number(req.query.ratingMin);
+      if (!Number.isInteger(min) || min < 1 || min > 5) {
+        return res.status(400).json({ error: 'ratingMin must be an integer 1-5' });
+      }
+      where.push('a.rating >= ?');
+      args.push(min);
+    }
+
+    // Exact match, not LIKE: tags are chosen from a list, and `norm()` would
+    // fold Mägi and mägi together where the tag list keeps them apart.
+    if (req.query.tag) {
+      where.push(`EXISTS (SELECT 1 FROM json_each(a.tags) j WHERE j.value = ?)`);
+      args.push(req.query.tag);
+    }
+
+    const clause = `WHERE ${where.join(' AND ')}`;
+    const from = `
       FROM shows sh
       JOIN series s ON s.id = sh.series_id
-      WHERE s.slug = ?
+      ${ANNOTATION_JOIN}
+      ${clause}`;
+
+    const rows = db().prepare(`
+      SELECT sh.id, sh.content_id, sh.title, sh.show_date, sh.url, sh.track_count,
+             ${ANNOTATION_COLUMNS}
+      ${from}
       ORDER BY sh.show_date DESC, sh.id DESC
-      LIMIT ? OFFSET ?`).all(req.params.slug, ps, (p - 1) * ps);
-    const { total } = db().prepare(
-      `SELECT COUNT(*) AS total FROM shows sh JOIN series s ON s.id = sh.series_id WHERE s.slug = ?`
-    ).get(req.params.slug);
-    res.json({ rows, total, page: p, pageSize: ps });
+      LIMIT ? OFFSET ?`).all(...args, ps, (p - 1) * ps);
+
+    const { total } = db().prepare(`SELECT COUNT(*) AS total ${from}`).get(...args);
+
+    res.json({ rows: rows.map(withAnnotation), total, page: p, pageSize: ps });
   } catch (e) { next(e); }
 });
 
@@ -64,15 +98,19 @@ router.get('/series/:slug/shows', (req, res, next) => {
 router.get('/shows/:id', (req, res, next) => {
   try {
     const show = db().prepare(`
-      SELECT sh.*, s.name AS series_name, s.slug AS series_slug
-      FROM shows sh JOIN series s ON s.id = sh.series_id
+      SELECT sh.*, s.name AS series_name, s.slug AS series_slug,
+             ${ANNOTATION_COLUMNS}
+      FROM shows sh
+      JOIN series s ON s.id = sh.series_id
+      ${ANNOTATION_JOIN}
       WHERE sh.id = ?`).get(req.params.id);
     if (!show) return res.status(404).json({ error: 'not found' });
     const tracks = db().prepare(`
       SELECT t.id, t.position, t.title, a.id AS artist_id, a.name AS artist
       FROM tracks t LEFT JOIN artists a ON a.id = t.artist_id
       WHERE t.show_id = ? ORDER BY t.position`).all(req.params.id);
-    res.json({ show, tracks });
+    const { annotation, ...rest } = withAnnotation(show);
+    res.json({ show: rest, tracks, annotation });
   } catch (e) { next(e); }
 });
 
@@ -157,6 +195,77 @@ router.get('/artists/:id', (req, res, next) => {
       WHERE t.artist_id = ?
       ORDER BY sh.show_date DESC`).all(req.params.id);
     res.json({ artist, tracks });
+  } catch (e) { next(e); }
+});
+
+/* ------------------------------ annotations -------------------------------- */
+
+router.get('/me', (req, res) => res.json({ email: req.user.email }));
+
+router.get('/tags', (_req, res, next) => {
+  try {
+    res.json(db().prepare(`
+      SELECT j.value AS tag, COUNT(*) AS count
+      FROM annotations a, json_each(a.tags) j
+      GROUP BY j.value
+      ORDER BY count DESC, tag COLLATE NOCASE`).all());
+  } catch (e) { next(e); }
+});
+
+/** The archive is the authority on which episodes exist. */
+function requireShow(req, res) {
+  const contentId = Number(req.params.contentId);
+  if (!Number.isInteger(contentId)) {
+    res.status(400).json({ error: 'content_id must be an integer' });
+    return null;
+  }
+  const row = db().prepare('SELECT content_id FROM shows WHERE content_id = ?').get(contentId);
+  if (!row) {
+    res.status(404).json({ error: 'not found' });
+    return null;
+  }
+  return contentId;
+}
+
+router.patch('/shows/:contentId/annotation', async (req, res, next) => {
+  try {
+    const contentId = requireShow(req, res);
+    if (contentId === null) return;
+
+    const check = validatePatch(req.body);
+    if (!check.ok) return res.status(400).json({ error: check.error });
+
+    // Durable store first, temp table only once it has accepted the write.
+    // The invariant this keeps is one-directional: the temp table never moves
+    // ahead of the durable store. The store can briefly be ahead of the temp
+    // table — a cache that is behind is safe, a cache that is ahead is a lie —
+    // and a boot reconciles it by reloading from the store. Two ways that gap
+    // opens, both accepted rather than guarded: a timed-out Firestore call
+    // (server/src/annotations/firestore.js) can still commit after this route
+    // has already answered 502 and skipped the update below; and if
+    // upsertAnnotationRow itself throws after merge() already committed, this
+    // process's own temp table falls behind until its next boot. Neither is
+    // reconciled mid-process — that would cost a round trip on the failure
+    // branch of a case that already self-heals at next boot, and would need
+    // its own retry loop for when the re-read also times out.
+    const merged = await getStore().merge(req.user.email, contentId, check.patch);
+    upsertAnnotationRow(db(), contentId, merged);
+    res.json(merged);
+  } catch (e) { next(e); }
+});
+
+router.delete('/shows/:contentId/annotation', async (req, res, next) => {
+  try {
+    const contentId = requireShow(req, res);
+    if (contentId === null) return;
+
+    // Same order, and the same accepted gap, as the PATCH handler above:
+    // store first, temp table only on success — the temp table can fall
+    // behind (a timed-out-but-committed delete, or a post-commit temp-table
+    // throw here) but never ahead, and a boot reconciles it.
+    await getStore().remove(req.user.email, contentId);
+    removeAnnotationRow(db(), contentId);
+    res.status(204).end();
   } catch (e) { next(e); }
 });
 

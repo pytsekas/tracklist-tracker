@@ -5,6 +5,7 @@ import Show from './pages/Show.jsx';
 import Tracks from './pages/Tracks.jsx';
 import Artists from './pages/Artists.jsx';
 import Artist from './pages/Artist.jsx';
+import Mine from './pages/Mine.jsx';
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
             <NavLink to="/" end>Series</NavLink>
             <NavLink to="/tracks">Tracks</NavLink>
             <NavLink to="/artists">Artists</NavLink>
+            <NavLink to="/mine">Mine</NavLink>
           </nav>
         </div>
       </header>
@@ -27,6 +29,7 @@ export default function App() {
           <Route path="/tracks" element={<Tracks />} />
           <Route path="/artists" element={<Artists />} />
           <Route path="/artists/:id" element={<Artist />} />
+          <Route path="/mine" element={<Mine />} />
           <Route path="*" element={<p className="empty">Not found.</p>} />
         </Routes>
       </main>
