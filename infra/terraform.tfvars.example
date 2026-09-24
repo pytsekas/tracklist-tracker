@@ -18,4 +18,4 @@ owner_email = "you@example.com"
 # allow_public_access = false
 # min_instances       = 0
 # max_instances       = 1
-# firestore_location  = "eur3"
+# firestore_location  = "europe-north1"   # or "eur3" for a Europe multi-region

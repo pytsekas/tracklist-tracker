@@ -273,9 +273,12 @@ it first, or delete the project outright with
   fails non-interactively) until it's set in `terraform.tfvars`. It is both who
   IAP lets through and whose annotations the server loads at boot.
 * **`firestore_location` is one-shot.** It can't be changed once
-  `google_firestore_database.annotations` exists — the default (`eur3`) is a
-  fine choice to leave alone, but pick deliberately if you override it, before
-  the apply that creates the database.
+  `google_firestore_database.annotations` exists. The default is
+  `europe-north1` — regional, co-located with the Cloud Run service, and
+  cheaper than a multi-region. Overriding it to `eur3` buys survival of a
+  whole-region outage, which is the one argument for it: these annotations are
+  the only thing here that can't be rebuilt, because the archive regenerates
+  from the CSVs. Decide before the apply that creates the database, not after.
 * **State is local.** `terraform.tfstate` sits in this directory and is
   gitignored. Uncomment the GCS backend in `versions.tf` before a second person
   needs to apply.

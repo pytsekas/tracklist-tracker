@@ -97,5 +97,11 @@ variable "placeholder_image" {
 variable "firestore_location" {
   type        = string
   description = "Firestore location. Cannot be changed after the database is created."
-  default     = "eur3"
+  # Regional, co-located with the Cloud Run service, rather than the eur3
+  # multi-region: lower latency, cheaper storage, and regional Firestore is
+  # already durable enough for one person's annotations. The multi-region's
+  # extra guarantee is surviving the loss of a whole region, which is not worth
+  # paying for here — though note these annotations are the one thing in this
+  # system that cannot be rebuilt, since the archive regenerates from the CSVs.
+  default = "europe-north1"
 }
