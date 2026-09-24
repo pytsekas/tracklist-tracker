@@ -13,27 +13,6 @@ Popikroonikad, Sander Varusk, Varuski teematund, Vibratsioon, Eesti Pops) in one
 
 ---
 
-###
-* Clean project - clean data import and storage options. Data load when viewing from frontend
-* Github build
-* Best GCP deploy options + github action
-
-
-
-
-❯ for a start this app looks OK,
-  i now want to implement CI&/CD
-  when pushing to github, project is built and deplyed
-
-  for deployment I want to use GCP
-
-  lets start with setting up infra
-
-  for that I want to use Terraform
-  What is thre simpliest solution
-
-
-
 ## Quick start (Docker)
 
 One container. The SQLite archive is baked into the image at build time, so
