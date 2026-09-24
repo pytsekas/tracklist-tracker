@@ -144,8 +144,13 @@ resource "google_firestore_database" "annotations" {
   location_id = var.firestore_location
   type        = "FIRESTORE_NATIVE"
 
-  # The archive is rebuildable from the CSVs; annotations are not.
+  # The archive is rebuildable from the CSVs; annotations are not. That's also
+  # why deletion_policy is pinned here rather than left to its default: it's
+  # independent of delete_protection_state above, so if that ever gets turned
+  # off for something routine, this still refuses to let `terraform destroy`
+  # delete the one thing here that can't be rebuilt.
   delete_protection_state = "DELETE_PROTECTION_ENABLED"
+  deletion_policy         = "ABANDON"
 
   depends_on = [google_project_service.required]
 }

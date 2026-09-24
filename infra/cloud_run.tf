@@ -34,6 +34,16 @@ resource "google_cloud_run_v2_service" "app" {
         value = var.owner_email
       }
 
+      # Cloud Run does not set this itself (that's App Engine/Cloud Functions);
+      # without it the Firestore client falls back to metadata-server project
+      # detection, which resolves lazily on the first RPC instead of at boot,
+      # so a misconfiguration would surface as a 502 on the first annotation
+      # write rather than failing fast like IAP_AUDIENCE does above.
+      env {
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = var.project_id
+      }
+
       resources {
         limits = {
           cpu    = var.cpu

@@ -58,9 +58,11 @@ variable "max_instances" {
   # the old and new revisions can briefly run one each, and a read landing on
   # the other can be a few seconds stale. It self-heals — the durable store is
   # always correct, and each instance rebuilds its temp table from it at boot.
-  # A top-level `scaling { max_instance_count = 1 }` would close that gap by
+  # A top-level `scaling { max_instance_count = 1 }` would target that gap by
   # capping both revisions combined, but risks blocking the new revision from
-  # starting until the old one drains, so it's deliberately not used here.
+  # starting until the old one drains — and Cloud Run documents that it may
+  # temporarily exceed the max-instance limit during traffic migration anyway,
+  # so it's deliberately not used here.
   default = 1
 }
 
