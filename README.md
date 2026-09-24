@@ -187,7 +187,7 @@ table is in-process, and a second instance would serve stale rows.
 | --- | --- | --- |
 | `ANNOTATIONS_DRIVER` | `sqlite` | `firestore` |
 | `DEV_USER_EMAIL` | your stand-in identity | ignored |
-| `IAP_AUDIENCE` | unused | required; the server refuses to boot without it |
+| `IAP_AUDIENCE` | unused | required; the server refuses to boot without it. Terraform sets it on the service from `local.iap_audience` |
 | `OWNER_EMAIL` | unused | whose annotations to load at boot |
 
 `npm test` and `npm run dev` use the SQLite driver, so neither needs a cloud

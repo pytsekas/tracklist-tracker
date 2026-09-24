@@ -37,8 +37,18 @@ Then apply:
 
 ```bash
 cd infra
-cp terraform.tfvars.example terraform.tfvars   # set project_id
+cp terraform.tfvars.example terraform.tfvars   # set project_id and owner_email
 terraform init
+```
+
+**Before this apply, do step 0 of [Rollout: turning on IAP](#rollout-turning-on-iap)
+below.** `iap_enabled` is a hardcoded literal on the Cloud Run service, so this
+first apply already turns IAP on — there is no later, separate step that does
+it. Terraform records the IAP service-agent grant whether or not that agent
+actually exists, so a green apply here is not proof the site will be
+reachable.
+
+```bash
 terraform apply
 ```
 
@@ -103,8 +113,10 @@ the code afterward breaks the smoke test, you know it's the code.
 ### 0. Before the first apply
 
 - **Set `owner_email`.** It has no default; Terraform fails (or prompts) at
-  plan time without it. Add it to your (gitignored) `terraform.tfvars`, and
-  add a placeholder line to `terraform.tfvars.example` for the next person.
+  plan time without it. Set your real value in your own (gitignored)
+  `terraform.tfvars` — `terraform.tfvars.example` already has a placeholder
+  line for it; confirm it's still there for the next person rather than
+  re-adding it.
 - **Provision the IAP service agent — this is the step a green `apply` cannot
   verify for you.** `main.tf` grants `roles/run.invoker` to
   `service-<PROJECT_NUMBER>@gcp-sa-iap.iam.gserviceaccount.com`, but nothing in
@@ -137,10 +149,11 @@ terraform apply
 ```
 
 The plan should show: the Firestore database, the `roles/datastore.user` and
-`roles/iap.httpsResourceAccessor` grants, `iap_enabled` turning on, and (if
-`allow_public_access` was `true` before) the `allUsers` grant being destroyed.
-The container is still whatever image was last deployed — nothing about your
-code has shipped yet.
+`roles/iap.httpsResourceAccessor` grants, the `google_cloud_run_v2_service_iam_member.iap_invoker`
+binding for the IAP service agent — the one step 0 exists to protect —
+`iap_enabled` turning on, and (if `allow_public_access` was `true` before) the
+`allUsers` grant being destroyed. The container is still whatever image was
+last deployed — nothing about your code has shipped yet.
 
 **Treat this apply as unverified until you check it yourself** — a green
 `apply` proves the config was recorded, not that it works:
@@ -186,17 +199,32 @@ gh variable set GCP_IAP_CLIENT_ID --body '<from the IAP settings page>'
 1. Opening the URL in a signed-out browser prompts for Google sign-in.
 2. Signing in as `owner_email` works and the annotations are still there.
 3. Signing in as any other account is refused.
-4. `curl -fsS "$(terraform output -raw service_url)/healthz"` with no token
-   returns 403 — IAP is on and gating a real route, not just the placeholder.
+4. `curl -s -o /dev/null -w '%{http_code}\n' "$(terraform output -raw service_url)/healthz"`
+   with no token prints a code that is not `200` — deliberately not `-fsS`,
+   which exits `0` and prints nothing on a redirect and would read as success
+   when it isn't. As in step 1 above, the exact code is IAP's to choose; what
+   matters is that it isn't the app's normal `/healthz` response
+   (`{"ok":true,...}`), confirming IAP is gating a real route, not just the
+   placeholder checked in step 1.
 5. The next push to `main` goes green, including the authenticated smoke test.
 
-**Rollback is not simply "the inverse apply."** Undoing `allow_public_access`
-or the Firestore/IAM grants is a normal `terraform apply` with different
-variables. Undoing `iap_enabled` is not — it's a hardcoded literal, so no
-`terraform.tfvars` edit touches it; putting the site back to fully public
-without IAP means editing `cloud_run.tf` and applying that code change. No
-data migration either way: annotations live in Firestore independently of any
-of this.
+**Rollback is not simply "the inverse apply."**
+
+Undoing `allow_public_access` or the `roles/datastore.user` IAM grant is a
+normal `terraform apply` with different variables. The Firestore database is
+not: `deletion_policy = "PREVENT"` plus `delete_protection_state =
+"DELETE_PROTECTION_ENABLED"` make any apply that would destroy or replace
+`google_firestore_database.annotations` fail, by design — that failure is the
+protection working, not a rollback bug to work around.
+
+Undoing `iap_enabled` is not a variable change either — it's a hardcoded
+literal, so no `terraform.tfvars` edit touches it. Putting the site back to
+fully public means **both** editing `cloud_run.tf` to set `iap_enabled = false`
+**and** setting `allow_public_access = true`: with `allow_public_access`
+defaulting to `false`, flipping `iap_enabled` alone leaves the service with no
+`run.invoker` binding at all, so it stays unreachable rather than becoming
+public. No data migration either way: annotations live in Firestore
+independently of any of this.
 
 ## Cost
 
