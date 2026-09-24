@@ -331,8 +331,21 @@ archive is the product and is still fully readable; annotations degrade to
 unavailable. `/healthz` continues to report only on the archive, so a Firestore
 outage does not roll back a deploy or kill a healthy revision.
 
-**Firestore unreachable on write.** 502, temp table untouched. The client keeps
-the user's input in the field rather than clearing it.
+**Firestore unreachable on write.** 502, temp table untouched, and the client
+keeps the user's input in the field rather than clearing it — except that
+"unreachable" includes a call that only timed out, and an abandoned
+`runTransaction` can still go on to commit. In that case the write did land in
+Firestore even though the request was told 502 and the temp table was never
+updated. The invariant this design actually holds is one-directional: the temp
+table never moves ahead of Firestore, but Firestore can briefly be ahead of the
+temp table. A cache that is behind is safe; a cache that is ahead is a lie, so
+the asymmetry is the point, not a gap. The next boot reconciles by reloading
+the temp table from Firestore. No reconcile is attempted mid-process — it would
+cost a round trip on the failure branch of a case that already self-heals at
+next boot, and would need its own retry loop for when the re-read also times
+out. The driver logs a timed-out call that goes on to succeed distinctly from
+one that is genuinely rejected, so this is visible in the logs rather than
+merely inferred.
 
 **A re-scrape removes an episode.** Its annotation stays in Firestore, orphaned
 and invisible. This is deliberate — ERR occasionally reshuffles the archive, and

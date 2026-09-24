@@ -241,8 +241,9 @@ Cloud Run scales to zero, so an idle month is free: no instances, no CPU, no
 requests. What you pay for is Artifact Registry storage (a few hundred MB of
 images, cents) and egress. `max_instances = 1` caps the worst case — and it is
 load-bearing, not just a cost cap: the annotation temp table is in-process, so
-a second concurrent instance would serve stale rows, in steady state. A deploy
-can briefly run one instance of each revision; see the comment on
+a second concurrent instance would serve stale rows. That holds in steady
+state; a deploy can briefly run one instance of each revision, and it
+self-heals from there — see the comment on
 `max_instances` in `variables.tf` and Annotations in the
 [top-level README](../README.md#annotations).
 

@@ -235,11 +235,19 @@ router.patch('/shows/:contentId/annotation', async (req, res, next) => {
     const check = validatePatch(req.body);
     if (!check.ok) return res.status(400).json({ error: check.error });
 
-    // Durable store first. Only once it has accepted the write does the temp
-    // table move, so the two cannot disagree. Known residual: if
-    // upsertAnnotationRow itself throws after merge() already committed, the
-    // store and temp table could disagree. Accepted rather than guarded —
-    // same process, same connection, temp table this process just created.
+    // Durable store first, temp table only once it has accepted the write.
+    // The invariant this keeps is one-directional: the temp table never moves
+    // ahead of the durable store. The store can briefly be ahead of the temp
+    // table — a cache that is behind is safe, a cache that is ahead is a lie —
+    // and a boot reconciles it by reloading from the store. Two ways that gap
+    // opens, both accepted rather than guarded: a timed-out Firestore call
+    // (server/src/annotations/firestore.js) can still commit after this route
+    // has already answered 502 and skipped the update below; and if
+    // upsertAnnotationRow itself throws after merge() already committed, this
+    // process's own temp table falls behind until its next boot. Neither is
+    // reconciled mid-process — that would cost a round trip on the failure
+    // branch of a case that already self-heals at next boot, and would need
+    // its own retry loop for when the re-read also times out.
     const merged = await getStore().merge(req.user.email, contentId, check.patch);
     upsertAnnotationRow(db(), contentId, merged);
     res.json(merged);
@@ -251,9 +259,10 @@ router.delete('/shows/:contentId/annotation', async (req, res, next) => {
     const contentId = requireShow(req, res);
     if (contentId === null) return;
 
-    // Same order and the same residual as the PATCH handler above: store
-    // first, temp table only on success; a post-commit temp-table throw here
-    // is accepted, not guarded.
+    // Same order, and the same accepted gap, as the PATCH handler above:
+    // store first, temp table only on success — the temp table can fall
+    // behind (a timed-out-but-committed delete, or a post-commit temp-table
+    // throw here) but never ahead, and a boot reconciles it.
     await getStore().remove(req.user.email, contentId);
     removeAnnotationRow(db(), contentId);
     res.status(204).end();

@@ -25,7 +25,7 @@ const toAnnotation = data => ({
 // promise; the timeout is a production feature, not a test device.
 const FIRESTORE_TIMEOUT_MS = 5000;
 
-function withTimeout(promise, ms) {
+function withTimeout(promise, ms, label) {
   let timer;
   const timedOut = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(`Firestore call timed out after ${ms}ms`)), ms);
@@ -33,9 +33,15 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, timedOut]).finally(() => {
     clearTimeout(timer);
     // The loser is a real call the SDK may still be retrying in the
-    // background; it must not surface as an unhandled rejection once it
-    // eventually settles on its own.
-    promise.catch(() => {});
+    // background, and an abandoned runTransaction can still go on to commit —
+    // the client already got its 502 and moved on, so a late success here
+    // must not surface as an unhandled rejection. It is worth a log line of
+    // its own, though: this is the one place that can tell "the write
+    // probably landed after all" apart from "it was rejected outright", and
+    // that distinction is otherwise invisible once the request has returned.
+    promise.then(
+      () => console.warn(`Firestore ${label} completed after its ${ms}ms deadline had already fired`),
+      () => {});
   });
 }
 
@@ -55,11 +61,10 @@ function withTimeout(promise, ms) {
  */
 export function createFirestoreStore({
   projectId,
-  settings = {},
   client = null,
   timeoutMs = FIRESTORE_TIMEOUT_MS,
 } = {}) {
-  const db = client ?? new Firestore({ projectId, ...settings });
+  const db = client ?? new Firestore({ projectId });
 
   // Firestore document ids are strings; content_id is an integer everywhere
   // else, so conversion happens here and nowhere else.
@@ -68,14 +73,14 @@ export function createFirestoreStore({
   return {
     async list(owner) {
       try {
-        const snap = await withTimeout(shows(owner).get(), timeoutMs);
+        const snap = await withTimeout(shows(owner).get(), timeoutMs, 'list');
         return new Map(snap.docs.map(d => [Number(d.id), toAnnotation(d.data())]));
       } catch (err) { throw unavailable(err); }
     },
 
     async get(owner, contentId) {
       try {
-        const doc = await withTimeout(shows(owner).doc(String(contentId)).get(), timeoutMs);
+        const doc = await withTimeout(shows(owner).doc(String(contentId)).get(), timeoutMs, 'get');
         return doc.exists ? toAnnotation(doc.data()) : null;
       } catch (err) { throw unavailable(err); }
     },
@@ -92,13 +97,13 @@ export function createFirestoreStore({
           tx.set(ref, next);
           return next;
         });
-        return await withTimeout(run, timeoutMs);
+        return await withTimeout(run, timeoutMs, 'merge');
       } catch (err) { throw unavailable(err); }
     },
 
     async remove(owner, contentId) {
       try {
-        await withTimeout(shows(owner).doc(String(contentId)).delete(), timeoutMs);
+        await withTimeout(shows(owner).doc(String(contentId)).delete(), timeoutMs, 'remove');
       } catch (err) { throw unavailable(err); }
     },
 

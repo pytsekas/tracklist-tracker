@@ -179,12 +179,17 @@ every route can `LEFT JOIN` annotations and keep filtering, sorting and
 pagination in SQL. (`ATTACH ':memory:'` on the same connection is *not*
 allowed — it fails with "attempt to write a readonly database".)
 
-Writes go to the durable store first and update the temp row only on success,
-so the two cannot disagree. `max_instances` is 1 for the same reason: the temp
-table is in-process, and a second instance would serve stale rows. That holds
-in steady state; a deploy can briefly run one instance of each revision, and
-it self-heals from there — see the comment on `max_instances` in
-`infra/variables.tf` for the full reasoning.
+Writes go to the durable store first and update the temp row only on success.
+The invariant that holds is one-directional, not "the two cannot disagree": the
+temp table never moves ahead of the durable store, but the store can briefly be
+ahead of it — a call that times out (see `firestore.js`) can still commit after
+the request has already answered 502 and skipped the temp-table update. A cache
+that is behind is safe; a cache that is ahead is a lie. Either way, the next
+boot reconciles by reloading the temp table from the store. `max_instances` is
+1 for a related reason: the temp table is in-process, and a second instance
+would serve stale rows. That holds in steady state; a deploy can briefly run
+one instance of each revision, and it self-heals from there too — see the
+comment on `max_instances` in `infra/variables.tf` for the full reasoning.
 
 | Variable | Local | Cloud Run |
 | --- | --- | --- |

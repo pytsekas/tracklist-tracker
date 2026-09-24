@@ -11,7 +11,13 @@ import Pager from '../components/Pager.jsx';
  * would otherwise convey nothing to them.
  */
 export function StateBadge({ annotation: a }) {
-  if (!a) return null;
+  // A row can exist with every field falsy -- ticking "Listened" and then
+  // unticking it leaves an annotation record behind, since there is no
+  // "clear" action that removes it. Without this check that row would render
+  // an empty <span className="badges">, whose margin-left shows up as an
+  // unexplained gap that never goes away.
+  const hasState = a && (a.listened || a.want_to_listen || a.rating || a.notes || a.tags.length);
+  if (!hasState) return null;
   return (
     <span className="badges">
       {a.listened && <span className="badge" title="Listened" aria-label="Listened">✓</span>}
