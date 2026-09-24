@@ -53,8 +53,14 @@ variable "min_instances" {
 variable "max_instances" {
   type        = number
   description = "Ceiling on concurrent instances; also the ceiling on a surprise bill."
-  # One instance keeps the in-process annotation temp table authoritative: a
-  # write on one instance would otherwise leave another serving stale rows.
+  # This caps instances per revision, so one instance keeps the in-process
+  # annotation temp table authoritative only in steady state: during a deploy
+  # the old and new revisions can briefly run one each, and a read landing on
+  # the other can be a few seconds stale. It self-heals — the durable store is
+  # always correct, and each instance rebuilds its temp table from it at boot.
+  # A top-level `scaling { max_instance_count = 1 }` would close that gap by
+  # capping both revisions combined, but risks blocking the new revision from
+  # starting until the old one drains, so it's deliberately not used here.
   default = 1
 }
 
