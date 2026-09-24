@@ -167,12 +167,11 @@ resource "google_project_iam_member" "runtime_firestore" {
 # create --service=iap.googleapis.com --project=<project>` (or implicitly from
 # the console), which is not a resource this provider exposes without adding
 # google-beta. That one-time command belongs to the rollout, not here — see
-# the rollout steps in
-# .superpowers/sdd/2026-09-22-show-annotations/task-11-brief.md. Resource-level
-# IAM on Cloud Run is served by the Cloud Run Admin API, which does not
-# validate that a member exists, so a green apply proves nothing: if the agent
-# was never created, this binding is recorded against an address nobody
-# occupies and every request fails to reach the backend once IAP is enabled.
+# the rollout section of infra/README.md. Resource-level IAM on Cloud Run is
+# served by the Cloud Run Admin API, which does not validate that a member
+# exists, so a green apply proves nothing: if the agent was never created,
+# this binding is recorded against an address nobody occupies and every
+# request fails to reach the backend once IAP is enabled.
 resource "google_cloud_run_v2_service_iam_member" "iap_invoker" {
   project  = var.project_id
   location = var.region
