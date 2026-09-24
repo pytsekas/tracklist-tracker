@@ -148,6 +148,9 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
 
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Deploy the new revision
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
@@ -156,9 +159,25 @@ jobs:
           region: ${{ vars.GCP_REGION }}
           image: ${{ needs.image.outputs.image }}
 
-      # The revision only takes traffic once /healthz passes, so a failure here
-      # means the live site is broken, not merely the new build.
+      # IAP now sits in front of the service, so an unauthenticated curl gets a
+      # 403 no matter how healthy the revision is. The deploy service account is
+      # granted roles/iap.httpsResourceAccessor in infra/main.tf; this mints an
+      # ID token for it and presents that.
+      #
+      # The revision only takes traffic once the startup probe passes, so a
+      # failure here means the live site is broken, not merely the new build.
       - name: Smoke-test the deployment
         env:
           SERVICE_URL: ${{ steps.deploy.outputs.url }}
-        run: curl --fail --silent --show-error "${SERVICE_URL}/healthz"
+          IAP_CLIENT_ID: ${{ vars.GCP_IAP_CLIENT_ID }}
+        run: |
+          if [ -z "${IAP_CLIENT_ID}" ]; then
+            echo "::notice::GCP_IAP_CLIENT_ID is unset; skipping the authenticated smoke test."
+            exit 0
+          fi
+          token="$(gcloud auth print-identity-token \
+            --audiences="${IAP_CLIENT_ID}" \
+            --include-email)"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${token}" \
+            "${SERVICE_URL}/healthz"
