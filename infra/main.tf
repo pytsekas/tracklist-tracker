@@ -144,13 +144,15 @@ resource "google_firestore_database" "annotations" {
   location_id = var.firestore_location
   type        = "FIRESTORE_NATIVE"
 
-  # The archive is rebuildable from the CSVs; annotations are not. That's also
-  # why deletion_policy is pinned here rather than left to its default: it's
-  # independent of delete_protection_state above, so if that ever gets turned
-  # off for something routine, this still refuses to let `terraform destroy`
-  # delete the one thing here that can't be rebuilt.
+  # The archive is rebuildable from the CSVs; annotations are not. deletion_policy
+  # is pinned to PREVENT, independently of delete_protection_state above, so any
+  # delete-or-replace fails loudly instead of orphaning this database — which
+  # matters beyond `terraform destroy`: location_id is immutable, and editing
+  # firestore_location later forces a replacement. ABANDON would satisfy that
+  # replacement by silently detaching the old, still-billing database and
+  # creating a new empty one; PREVENT turns that into an error instead.
   delete_protection_state = "DELETE_PROTECTION_ENABLED"
-  deletion_policy         = "ABANDON"
+  deletion_policy         = "PREVENT"
 
   depends_on = [google_project_service.required]
 }
@@ -173,10 +175,10 @@ resource "google_project_iam_member" "runtime_firestore" {
 # the console), which is not a resource this provider exposes without adding
 # google-beta. That one-time command belongs to the rollout, not here — see
 # the rollout section of infra/README.md. Resource-level IAM on Cloud Run is
-# served by the Cloud Run Admin API, which does not validate that a member
-# exists, so a green apply proves nothing: if the agent was never created,
-# this binding is recorded against an address nobody occupies and every
-# request fails to reach the backend once IAP is enabled.
+# served by the Cloud Run Admin API, which does not reliably validate that a
+# member exists, so a green apply proves nothing: if the agent was never
+# created, this binding is recorded against an address nobody occupies and
+# every request fails to reach the backend once IAP is enabled.
 resource "google_cloud_run_v2_service_iam_member" "iap_invoker" {
   project  = var.project_id
   location = var.region
