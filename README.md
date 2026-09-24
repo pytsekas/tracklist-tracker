@@ -181,7 +181,10 @@ allowed — it fails with "attempt to write a readonly database".)
 
 Writes go to the durable store first and update the temp row only on success,
 so the two cannot disagree. `max_instances` is 1 for the same reason: the temp
-table is in-process, and a second instance would serve stale rows.
+table is in-process, and a second instance would serve stale rows. That holds
+in steady state; a deploy can briefly run one instance of each revision, and
+it self-heals from there — see the comment on `max_instances` in
+`infra/variables.tf` for the full reasoning.
 
 | Variable | Local | Cloud Run |
 | --- | --- | --- |
@@ -193,13 +196,21 @@ table is in-process, and a second instance would serve stale rows.
 `npm test` and `npm run dev` use the SQLite driver, so neither needs a cloud
 project, credentials or an emulator.
 
+`DEV_USER_EMAIL` and the `ANNOTATIONS_*` variables are read straight from the
+process's runtime variables — nothing in this project loads `.env.example`'s
+copy of them automatically. Set them yourself: `DEV_USER_EMAIL=you@example.com
+npm run dev`, or an `environment:` entry under the app service in
+`docker-compose.yml`.
+
 ## Access
 
 The site is behind [Cloud Run direct IAP](https://docs.cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run) —
 Google sign-in, one allowlisted account, no load balancer and no added cost.
-There is no password and no session store: IAP signs an assertion, and the
-server verifies it (ES256 only, issuer `https://cloud.google.com/iap`, audience
-pinned to this service) on every request.
+There is no password and no session store: IAP gates the whole origin before
+any request reaches the container, and the server additionally verifies the
+signed assertion itself (ES256 only, issuer `https://cloud.google.com/iap`,
+audience pinned to this service) on every `/api` request — the only routes
+that check it themselves, since IAP is what protects the static bundle.
 
 Grant someone access by adding them to `google_iap_web_cloud_run_service_iam_member`
 in `infra/main.tf`. Note that they would see *your* annotations — this is a

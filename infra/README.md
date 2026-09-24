@@ -87,9 +87,12 @@ gcloud run services logs tail tracklist-browser --region=europe-north1
 ## Rollout: turning on IAP
 
 This is the one-time transition from the current public deployment to the
-IAP-gated one this branch builds. Read it before running `terraform apply`
-here — the moment that apply succeeds, the live site stops answering anyone
-who isn't signed in as `owner_email`, including whoever's using the
+IAP-gated one this branch builds — and equally, if you're bootstrapping a
+brand new project above, this **is** your first apply; there is no separate,
+simpler path for a project that has never had a public deployment to begin
+with. Read it before running `terraform apply` — the moment that apply
+succeeds, the live site (if one already exists) stops answering anyone who
+isn't signed in as `owner_email`, including whoever's using the
 currently-deployed (pre-annotations) code.
 
 **This is not the three-step rollout the design brief describes**, where a
@@ -188,7 +191,10 @@ gh pr create --fill
 ```
 
 Set the smoke test's IAP variable before or shortly after merging — without
-it, CI degrades to a notice instead of actually checking anything:
+it, CI degrades to a notice instead of actually checking anything. It is not
+a Terraform output; find it in the Cloud Console under **Security → Identity-Aware
+Proxy**, on the row for this Cloud Run service, once IAP is on (i.e. after
+the apply in step 1):
 
 ```bash
 gh variable set GCP_IAP_CLIENT_ID --body '<from the IAP settings page>'
@@ -199,13 +205,16 @@ gh variable set GCP_IAP_CLIENT_ID --body '<from the IAP settings page>'
 1. Opening the URL in a signed-out browser prompts for Google sign-in.
 2. Signing in as `owner_email` works and the annotations are still there.
 3. Signing in as any other account is refused.
-4. `curl -s -o /dev/null -w '%{http_code}\n' "$(terraform output -raw service_url)/healthz"`
+4. `curl -sS -o /dev/null -w '%{http_code}\n' "$(terraform output -raw service_url)/healthz"`
    with no token prints a code that is not `200` — deliberately not `-fsS`,
    which exits `0` and prints nothing on a redirect and would read as success
    when it isn't. As in step 1 above, the exact code is IAP's to choose; what
    matters is that it isn't the app's normal `/healthz` response
    (`{"ok":true,...}`), confirming IAP is gating a real route, not just the
-   placeholder checked in step 1.
+   placeholder checked in step 1. **`000` is not a pass** — it means curl
+   never got a response at all (DNS, TLS, or connection failure), which is a
+   reachability problem, not evidence of IAP; the `-S` flag makes curl print
+   its own error text alongside it so the two aren't confused.
 5. The next push to `main` goes green, including the authenticated smoke test.
 
 **Rollback is not simply "the inverse apply."**
@@ -232,8 +241,10 @@ Cloud Run scales to zero, so an idle month is free: no instances, no CPU, no
 requests. What you pay for is Artifact Registry storage (a few hundred MB of
 images, cents) and egress. `max_instances = 1` caps the worst case — and it is
 load-bearing, not just a cost cap: the annotation temp table is in-process, so
-a second concurrent instance would serve stale rows (see Annotations in the
-[top-level README](../README.md#annotations)).
+a second concurrent instance would serve stale rows, in steady state. A deploy
+can briefly run one instance of each revision; see the comment on
+`max_instances` in `variables.tf` and Annotations in the
+[top-level README](../README.md#annotations).
 
 ## Tearing it down
 
