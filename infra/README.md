@@ -143,6 +143,36 @@ the code afterward breaks the smoke test, you know it's the code.
   If the agent was never created, the apply still goes green, IAP still turns
   on, the old public grant is still gone, and the service is simply
   unreachable, with nothing in the Terraform output pointing at why.
+- **Configure the OAuth consent screen — Terraform cannot do this one either.**
+  `iap_enabled = true` turns IAP on; it does not give IAP an OAuth client to
+  send anyone to. Without one, every request gets a `502` whose body reads
+  `Empty Google Account OAuth client ID(s)/secret(s)` and whose headers carry
+  `x-goog-iap-generated-response: true` — IAP working correctly and having
+  nowhere to send you, which is a different problem from the one above and has
+  the same symptom of a green apply.
+
+  The `google_iap_brand` resource only creates **Internal** brands, which
+  require the project to sit under an organization. A standalone project — any
+  project owned by a personal Google account — has no API path at all, so this
+  is a Console step by necessity, not by preference:
+
+  1. Open `https://console.cloud.google.com/apis/credentials/consent?project=<PROJECT_ID>`
+  2. Choose **External** (the only choice without an organization)
+  3. Fill in the app name, support email and developer contact
+  4. Add `owner_email` as a **test user** — an External app in Testing mode
+     admits only listed users, which is exactly the behaviour a single-user
+     site wants
+
+  Do this before the apply if you can. If you have already applied, do it now
+  and the `502` resolves into a sign-in redirect within a minute; nothing needs
+  re-applying.
+
+  This one was missed by every review of this branch, because no reviewer was
+  permitted to run `terraform apply`. Worth knowing which check catches it:
+  step 1's IAM check passes cleanly while this is still broken — the invoker
+  grant really is correct — and it is the cold `curl` that exposes it, by
+  returning a body mentioning neither IAP nor signing in. That check is doing
+  real work; do not skip it because the one above it looked fine.
 
 ### 1. Apply
 
