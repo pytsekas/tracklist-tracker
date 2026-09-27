@@ -1,25 +1,78 @@
 # Infrastructure
 
-Terraform for the GCP side of the deploy: an image registry, a Cloud Run
-service, and a way for GitHub Actions to sign in without a stored key.
+Terraform for the GCP side: an image registry, a Cloud Run service behind
+Identity-Aware Proxy, a Firestore database for annotations, and a way for
+GitHub Actions to sign in without a stored key.
 
+## Request path
+
+What happens when someone opens the site.
+
+```mermaid
+graph LR
+    U["Owner<br/>owner_email"] -->|1. GET| IAP{{"Identity-Aware Proxy<br/>enabled on the service"}}
+    IAP -->|2. no session| G["Google sign-in<br/>custom OAuth client"]
+    G -->|3. signed in| IAP
+    IAP -->|"4. invokes as the IAP<br/>service agent, with a<br/>signed assertion header"| CR
+
+    subgraph CR["Cloud Run · europe-north1"]
+        AUTH["auth.js verifies the assertion<br/>ES256 only · audience pinned"]
+        OWN["requireOwner<br/>403 unless owner_email"]
+        APP["Express + React bundle"]
+        TMP[("TEMP TABLE annotations<br/>per-process, in memory")]
+        ARC[("tracklists.sqlite · 4.4 MB<br/>read-only, baked into the image")]
+        AUTH --> OWN --> APP
+        APP -->|LEFT JOIN| TMP
+        APP -->|SELECT| ARC
+    end
+
+    APP <-->|"loads at boot,<br/>writes on change"| FS[("Firestore (default)<br/>annotations/{email}/shows/{id}")]
 ```
-GitHub Actions ──OIDC──> Workload Identity Pool ──> deployer service account
-                                                         │
-                                  push image             │  deploy revision
-                                     ▼                   ▼
-                          Artifact Registry ──────> Cloud Run service
-                                                    (runs as its own
-                                                     role-less identity)
+
+The archive is read-only and rebuilt wholesale by `npm run build:db`, so
+annotations cannot live in it — a re-scrape would destroy them. They live in
+Firestore and are loaded into a temp table at boot, which is what lets routes
+`LEFT JOIN` them and keep filtering, sorting and pagination in SQL.
+
+## Deploy path
+
+What happens on a push to `main`.
+
+```mermaid
+graph LR
+    DEV["git push main"] --> GH["GitHub Actions"]
+    GH --> T["Test and build<br/>npm test · npm run build"]
+    T --> B["Container image<br/>docker build"]
+    B --> D["Deploy<br/>new revision + authenticated<br/>smoke test on /healthz"]
+    B -->|push| AR[("Artifact Registry")]
+    AR -->|deploy| RUN["Cloud Run"]
+    D --> RUN
+
+    GH -.->|"no stored key:<br/>short-lived identity"| WIF{{"Workload Identity<br/>Federation"}}
+    WIF -.->|impersonates| SA["deployer SA"]
+    SA -.-> AR
+    SA -.-> RUN
 ```
+
+Each job gates the next: a failing test means no image, a failing image means
+no deploy. Pull requests stop after building the image — nothing is published
+and nothing is deployed.
+
+## What Terraform creates
 
 | Resource | Why |
 | --- | --- |
 | Artifact Registry repo | Holds the images. Keeps the last 10 versions, expires anything older than 30 days |
 | Workload identity pool + provider | Lets the workflow sign in as GCP. Accepts only this repository, only on `main` |
-| `tracklist-browser-deployer` SA | What CI acts as: push images, create revisions |
-| `tracklist-browser-run` SA | What the container runs as. Holds no roles — it only reads a file inside its own image |
-| Cloud Run service | The app. Scales to zero, `/healthz` gates every new revision |
+| `…-deployer` SA | What CI acts as: `run.admin`, `artifactregistry.writer`, and IAP access so its post-deploy healthcheck is not a 403. No data access |
+| `…-run` SA | What the container runs as. Holds `roles/datastore.user` and nothing else — enough to read and write annotations, and no more |
+| Cloud Run service | The app. `iap_enabled`, scales to zero, `max_instances = 1`, `/healthz` gates every new revision |
+| Firestore database | The annotations. Regional, and delete-protected twice over — see the `deletion_policy` comment in `main.tf` |
+| IAP IAM bindings | Exactly three principals: the IAP service agent may invoke the service; the owner and the deploy SA may pass IAP |
+
+`max_instances = 1` is load-bearing rather than thrift: the annotation temp
+table is per-process memory, so a second instance would serve stale rows after
+a write on the first. Scale-to-zero is unaffected, so it costs nothing idle.
 
 ## One-time bootstrap
 
