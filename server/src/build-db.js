@@ -10,6 +10,7 @@ const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 export const DEFAULT_CSV_DIR = path.resolve(__dirname, '../../data/csv');
 export const DEFAULT_OUT     = path.resolve(__dirname, '../../data/tracklists.sqlite');
+export const DEFAULT_SERIES = path.resolve(__dirname, '../../data/series.json');
 
 /** Create a fresh database at `file` with the schema applied. */
 export function createDatabase(file) {
@@ -35,11 +36,29 @@ function readCsvDir(dir) {
 }
 
 /**
+ * Copy per-series settings from `file` (data/series.json, keyed by slug) onto
+ * the imported series. An unknown slug throws: a typo would otherwise leave a
+ * series without its archive URL and nothing would notice.
+ */
+function applySeriesFile(db, file) {
+  const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const update = db.prepare(`UPDATE series SET archive_url = ? WHERE slug = ?`);
+  const unknown = Object.entries(config)
+    .filter(([slug, { archive_url }]) => update.run(archive_url ?? null, slug).changes === 0)
+    .map(([slug]) => slug);
+  if (unknown.length) {
+    throw new Error(`series.json names unknown series: ${unknown.join(', ')}`);
+  }
+}
+
+/**
  * Build a complete database from `csvDir` and move it into place at `outPath`.
  * Builds to a temporary file and renames only on success, so a failed build
  * never leaves a half-populated database behind.
  */
-export function buildDatabase({ csvDir = DEFAULT_CSV_DIR, outPath = DEFAULT_OUT } = {}) {
+export function buildDatabase({
+  csvDir = DEFAULT_CSV_DIR, outPath = DEFAULT_OUT, seriesFile = null,
+} = {}) {
   const files = readCsvDir(csvDir);
   const tmp = `${outPath}.building`;
   // `db` is declared outside the try but ASSIGNED inside it. createDatabase()
@@ -60,6 +79,7 @@ export function buildDatabase({ csvDir = DEFAULT_CSV_DIR, outPath = DEFAULT_OUT 
       if (!result.ok) throw new Error(`${name}: ${result.message}`);
       results.push(result);
     }
+    if (seriesFile) applySeriesFile(db, seriesFile);
 
     const count = table => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
     const counts = {
@@ -91,7 +111,7 @@ export function buildDatabase({ csvDir = DEFAULT_CSV_DIR, outPath = DEFAULT_OUT 
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const { counts, results } = buildDatabase();
+    const { counts, results } = buildDatabase({ seriesFile: DEFAULT_SERIES });
     for (const r of results) {
       console.log(`  ${r.filename}: ${r.rows_read} rows, ${r.skipped} skipped`);
     }

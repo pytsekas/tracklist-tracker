@@ -144,3 +144,34 @@ test('buildDatabase cleans up when the database cannot be created', () => {
   assert.ok(!fs.existsSync(`${out}.building`), 'must not leave the temp path behind');
   assert.ok(!fs.existsSync(out), 'must not ship a database');
 });
+
+function seriesFile(config) {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tlb-series-')), 'series.json');
+  fs.writeFileSync(file, JSON.stringify(config));
+  return file;
+}
+
+test('buildDatabase sets archive_url from the series file', () => {
+  const out = tmpFile();
+  buildDatabase({
+    csvDir: FIXTURE_CSV, outPath: out,
+    seriesFile: seriesFile({ testshow: { archive_url: 'https://r2.err.ee/arhiiv/testshow' } }),
+  });
+
+  const db = new Database(out, { readonly: true, fileMustExist: true });
+  const row = db.prepare(`SELECT archive_url FROM series WHERE slug = 'testshow'`).get();
+  assert.equal(row.archive_url, 'https://r2.err.ee/arhiiv/testshow');
+  db.close();
+});
+
+test('buildDatabase refuses a series file naming an unknown slug', () => {
+  const out = tmpFile();
+  assert.throws(
+    () => buildDatabase({
+      csvDir: FIXTURE_CSV, outPath: out,
+      seriesFile: seriesFile({ tsetshow: { archive_url: 'https://r2.err.ee/arhiiv/x' } }),
+    }),
+    /series\.json names unknown series: tsetshow/
+  );
+  assert.ok(!fs.existsSync(out), 'leaves no database behind on failure');
+});
