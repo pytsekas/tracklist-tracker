@@ -1,0 +1,9 @@
+{
+  "eesti_pops":            { "archive_url": "https://r2.err.ee/arhiiv/eestipops" },
+  "fantaasia":             { "archive_url": "https://klassikaraadio.err.ee/arhiiv/fanta" },
+  "popikroonikad":         { "archive_url": "https://r2.err.ee/arhiiv/popikroonikad" },
+  "sander_varusk":         { "archive_url": "https://r2.err.ee/arhiiv/sander-varusk" },
+  "varuski_teematund":     { "archive_url": "https://r2.err.ee/arhiiv/varuski-teematund" },
+  "vibratsioon":           { "archive_url": null },
+  "xx_sajandi_popmuusika": { "archive_url": "https://r2.err.ee/arhiiv/xx_sajandi_popmuusika" }
+}
