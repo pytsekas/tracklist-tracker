@@ -8,9 +8,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
-export const DEFAULT_CSV_DIR = path.resolve(__dirname, '../../data/csv');
-export const DEFAULT_OUT     = path.resolve(__dirname, '../../data/tracklists.sqlite');
-export const DEFAULT_SERIES = path.resolve(__dirname, '../../data/series.json');
+export const DEFAULT_CSV_DIR      = path.resolve(__dirname, '../../data/csv');
+export const DEFAULT_OUT          = path.resolve(__dirname, '../../data/tracklists.sqlite');
+export const DEFAULT_SERIES       = path.resolve(__dirname, '../../data/series.json');
+export const DEFAULT_BROADCASTERS = path.resolve(__dirname, '../../data/broadcasters.json');
 
 /** Create a fresh database at `file` with the schema applied. */
 export function createDatabase(file) {
@@ -36,15 +37,41 @@ function readCsvDir(dir) {
 }
 
 /**
+ * Insert the broadcasters from `file` (data/broadcasters.json, keyed by slug).
+ * Applied before the series file, which refers to these rows by slug.
+ */
+function applyBroadcastersFile(db, file) {
+  const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const insert = db.prepare(`INSERT INTO broadcasters (slug, name, url) VALUES (?, ?, ?)`);
+  for (const [slug, entry] of Object.entries(config)) {
+    const { name, url } = entry ?? {};
+    if (!name) throw new Error(`broadcasters.json: ${slug} has no name`);
+    insert.run(slug, name, url ?? null);
+  }
+}
+
+/**
  * Copy per-series settings from `file` (data/series.json, keyed by slug) onto
- * the imported series. An unknown slug throws: a typo would otherwise leave a
- * series without its archive URL and nothing would notice.
+ * the imported series. An unknown series slug, or a `broadcaster` that is not
+ * in the broadcasters table, throws: a typo would otherwise leave a series
+ * without its archive URL or broadcaster and nothing would notice.
  */
 function applySeriesFile(db, file) {
   const config = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const update = db.prepare(`UPDATE series SET archive_url = ? WHERE slug = ?`);
+  const idOf = db.prepare(`SELECT id FROM broadcasters WHERE slug = ?`).pluck();
+  const update = db.prepare(
+    `UPDATE series SET archive_url = ?, broadcaster_id = ? WHERE slug = ?`);
+
+  const resolveBroadcaster = slug => {
+    if (slug == null) return null;
+    const id = idOf.get(slug);
+    if (id === undefined) throw new Error(`series.json names unknown broadcaster: ${slug}`);
+    return id;
+  };
+
   const unknown = Object.entries(config)
-    .filter(([slug, { archive_url }]) => update.run(archive_url ?? null, slug).changes === 0)
+    .filter(([slug, { archive_url, broadcaster }]) =>
+      update.run(archive_url ?? null, resolveBroadcaster(broadcaster), slug).changes === 0)
     .map(([slug]) => slug);
   if (unknown.length) {
     throw new Error(`series.json names unknown series: ${unknown.join(', ')}`);
@@ -57,7 +84,8 @@ function applySeriesFile(db, file) {
  * never leaves a half-populated database behind.
  */
 export function buildDatabase({
-  csvDir = DEFAULT_CSV_DIR, outPath = DEFAULT_OUT, seriesFile = null,
+  csvDir = DEFAULT_CSV_DIR, outPath = DEFAULT_OUT,
+  seriesFile = null, broadcastersFile = null,
 } = {}) {
   const files = readCsvDir(csvDir);
   const tmp = `${outPath}.building`;
@@ -79,6 +107,7 @@ export function buildDatabase({
       if (!result.ok) throw new Error(`${name}: ${result.message}`);
       results.push(result);
     }
+    if (broadcastersFile) applyBroadcastersFile(db, broadcastersFile);
     if (seriesFile) applySeriesFile(db, seriesFile);
 
     const count = table => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
@@ -111,7 +140,9 @@ export function buildDatabase({
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const { counts, results } = buildDatabase({ seriesFile: DEFAULT_SERIES });
+    const { counts, results } = buildDatabase({
+      seriesFile: DEFAULT_SERIES, broadcastersFile: DEFAULT_BROADCASTERS,
+    });
     for (const r of results) {
       console.log(`  ${r.filename}: ${r.rows_read} rows, ${r.skipped} skipped`);
     }

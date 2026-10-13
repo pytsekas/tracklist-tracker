@@ -91,6 +91,12 @@ The database itself is produced by `npm run build:db`, which reads
 repository**; they are scrape output. Keep them wherever you scrape, drop them
 into `data/csv/`, rebuild, and commit the resulting `.sqlite`.
 
+Two small JSON files in `data/` are applied on top of the CSVs, and unlike the
+CSVs they are committed: `broadcasters.json` (keyed by slug: name and home page)
+and `series.json` (keyed by series slug: `archive_url` and the `broadcaster`
+slug). A series slug that matches nothing imported, or a `broadcaster` that is
+not in `broadcasters.json`, fails the build rather than being skipped.
+
 The importer figures out what a file is from its **header row**, and which
 series it belongs to from its **filename**:
 
@@ -116,14 +122,17 @@ archive.
 
 ## Schema
 
-Four tables, in `server/src/schema.sql`. It is applied once, when the database
+Five tables, in `server/src/schema.sql`. It is applied once, when the database
 is built — the running server opens the file read-only and never writes to it.
 
 ```
-series ──< shows ──< tracks >── artists
+broadcasters ──< series ──< shows ──< tracks >── artists
 ```
 
-* `series` — one row per radio show (slug, display name)
+* `broadcasters` — who puts a series out: slug, display name and home page URL,
+  from `data/broadcasters.json`
+* `series` — one row per radio show (slug, display name); `archive_url` and the
+  `broadcaster` reference come from `data/series.json`
 * `shows` — one row per episode; `content_id` is the natural key, `track_count`
   is kept from the scrape so episodes with **no** tracklist are still visible
 * `artists` — deduplicated; `name` is what ERR printed, `name_norm` is the
