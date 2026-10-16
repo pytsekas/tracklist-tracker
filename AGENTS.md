@@ -47,6 +47,7 @@ data/
   series.json             per-series settings keyed by slug (broadcaster, archive_url); same
   csv/                    scrape output; not in git; only needed to rebuild the archive
 infra/                    Terraform for GCP: Cloud Run, IAP, Firestore, Artifact Registry, WIF
+docs/database.md          reference for the archive, the annotation store and the temp table
 docs/superpowers/         design specs, implementation plans and a known-issues list
 .github/workflows/ci.yml  test, build and image on every PR and push; deploy from main only
 ```
@@ -146,6 +147,10 @@ production wrong.
   `docs:` prefix, but recent ones on main do not.
 - Stage only the files you touched. Never `git add -A`: the tree often
   carries the user's unrelated edits.
+- Once a task is complete and `npm test` passes, commit and push to main
+  without asking. A push to main deploys to production through ci.yml, so
+  the test run has to be the one you just did on the final tree, not an
+  earlier one. Half-done work stays on a branch.
 
 ## Environment variables
 
@@ -194,8 +199,10 @@ Annotations section has the same table with more context.
 - Loosen the validatePatch limits (notes 4000 characters, 20 tags, 40
   characters each) without updating the README.
 - Raise max_instances above 1.
-- Run `terraform apply` or `terraform destroy`, push to main, or change GitHub
-  repository variables. Those are the user's calls.
+- Run `terraform apply` or `terraform destroy`, or change GitHub repository
+  variables. Those are the user's calls.
+- Push to main with failing or unrun tests, or with a task still half-done.
+  See Conventions for when a push to main is allowed.
 - Commit anything under .omc/ or .superpowers/. Both are local tooling state.
   .omc/ is in the root .gitignore; .superpowers/sdd/ is ignored only by its
   own nested ignore-all .gitignore, so a fresh clone has no such protection.
@@ -203,6 +210,8 @@ Annotations section has the same table with more context.
 ## Pointers
 
 - README.md: scripts, import rules, schema, annotations design, API table.
+- docs/database.md: every table and column, the build pipeline, the annotation
+  shape and stores, and the temp table invariants.
 - infra/README.md: request and deploy diagrams, bootstrap, IAP rollout
   runbook, rollback notes.
 - docs/superpowers/specs/: why things are the way they are.

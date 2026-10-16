@@ -146,7 +146,9 @@ match against the precomputed `_norm` columns instead. Diacritics are preserved
 on purpose — `õ`, `ä`, `ö` and `ü` are distinct Estonian letters, so `magi` does
 not match `Mägi`.
 
-To change the schema: edit `schema.sql`, then re-run `npm run build:db`.
+To change the schema: edit `schema.sql`, then re-run `npm run build:db`. The full
+reference, including the annotation store and the temp table it is joined
+through, is in [`docs/database.md`](docs/database.md).
 
 ## Annotations
 
