@@ -28,6 +28,10 @@ export const api = {
   me:               ()            => get('/me'),
   patchAnnotation:  (cid, patch)  => send('PATCH', `/shows/${cid}/annotation`, patch),
   deleteAnnotation: (cid)         => send('DELETE', `/shows/${cid}/annotation`),
+  favourites:       (p)            => get('/favourites', p),
+  addFavourite:     (body)         => send('POST', '/favourites', body),
+  patchFavourite:   (id, patch)    => send('PATCH', `/favourites/${id}`, patch),
+  deleteFavourite:  (id)           => send('DELETE', `/favourites/${id}`),
 };
 
 export const fmtDate = d => (d ? String(d).slice(0, 10).split('-').reverse().join('.') : '—');
