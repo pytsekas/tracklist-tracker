@@ -125,3 +125,56 @@ export function newEntry({ kind, artist, title, show }, now = new Date()) {
     meta: null,
   };
 }
+
+const SHOW_SQL = `
+  SELECT sh.content_id, sh.title AS show_title, sh.show_date,
+         s.name AS series_name, s.slug AS series_slug
+  FROM shows sh JOIN series s ON s.id = sh.series_id
+  WHERE sh.content_id = ?`;
+
+const TRACK_SQL = `
+  SELECT t.title, a.name AS artist,
+         sh.content_id, sh.title AS show_title, sh.show_date,
+         s.name AS series_name, s.slug AS series_slug
+  FROM tracks t
+  LEFT JOIN artists a ON a.id = t.artist_id
+  JOIN shows sh ON sh.id = t.show_id
+  JOIN series s ON s.id = sh.series_id
+  WHERE t.id = ?`;
+
+const snapshot = row => ({
+  content_id: row.content_id,
+  title: row.show_title,
+  show_date: row.show_date,
+  series_name: row.series_name,
+  series_slug: row.series_slug,
+});
+
+/**
+ * Build the entry a cleaned add body describes, from the archive. The archive
+ * is the authority on what exists: null means "no such row", which the route
+ * turns into 404. Synchronous, like every archive call.
+ */
+export function resolveAdd(handle, add, now = new Date()) {
+  switch (add.kind) {
+    case 'show': {
+      const row = handle.prepare(SHOW_SQL).get(add.content_id);
+      if (!row) return null;
+      return newEntry({ kind: 'show', artist: null, title: row.show_title, show: snapshot(row) }, now);
+    }
+    case 'song': {
+      const row = handle.prepare(TRACK_SQL).get(add.track_id);
+      if (!row) return null;
+      return newEntry({ kind: 'song', artist: row.artist, title: row.title, show: snapshot(row) }, now);
+    }
+    case 'artist': {
+      const row = handle.prepare('SELECT name FROM artists WHERE id = ?').get(add.artist_id);
+      if (!row) return null;
+      return newEntry({ kind: 'artist', artist: row.name, title: null, show: null }, now);
+    }
+    case 'album':
+      return newEntry({ kind: 'album', artist: add.artist, title: add.title, show: null }, now);
+    default:
+      return null;
+  }
+}

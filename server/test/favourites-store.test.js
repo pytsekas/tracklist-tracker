@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildDatabase } from '../src/build-db.js';
+import { openDb } from '../src/db.js';
 import {
   KINDS, MAX_NAME, entryId, isEntryId, validateAdd, validatePatch, applyPatch, newEntry,
+  resolveAdd,
 } from '../src/favourites/store.js';
 
 /* -------------------------------- identity -------------------------------- */
@@ -159,4 +166,71 @@ test('newEntry treats a missing artist as the empty norm', () => {
 
 test('KINDS lists the four kinds', () => {
   assert.deepEqual([...KINDS], ['show', 'song', 'artist', 'album']);
+});
+
+/* ------------------------------- resolveAdd ------------------------------- */
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURE_CSV = path.join(__dirname, 'fixtures/csv');
+
+function fixtureDb() {
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tlb-fav-')), 'test.sqlite');
+  buildDatabase({ csvDir: FIXTURE_CSV, outPath: out });
+  return openDb(out);
+}
+const trackId = (h, title) => h.prepare('SELECT id FROM tracks WHERE title = ?').get(title).id;
+const artistId = (h, name) => h.prepare('SELECT id FROM artists WHERE name = ?').get(name).id;
+
+test('resolveAdd builds a show entry from its content_id', () => {
+  const h = fixtureDb();
+  const e = resolveAdd(h, { kind: 'show', content_id: 1610000001 });
+  assert.equal(e.kind, 'show');
+  assert.equal(e.artist, null);
+  assert.equal(e.title, 'Testsaade. Esimene');
+  assert.deepEqual(e.show, {
+    content_id: 1610000001, title: 'Testsaade. Esimene', show_date: '2024-02-01',
+    series_name: e.show.series_name, series_slug: 'testshow',
+  });
+  assert.equal(e.id, entryId('show', ['1610000001']));
+  h.close();
+});
+
+test('resolveAdd builds a song entry with the show it was heard in', () => {
+  const h = fixtureDb();
+  const e = resolveAdd(h, { kind: 'song', track_id: trackId(h, 'Teine lugu') });
+  assert.equal(e.kind, 'song');
+  assert.equal(e.artist, 'Mägi', 'the artist row name, not the spelling on this track');
+  assert.equal(e.title, 'Teine lugu');
+  assert.equal(e.show.content_id, 1610000001);
+  assert.equal(e.id, entryId('song', ['mägi', 'teine lugu']));
+  h.close();
+});
+
+test('resolveAdd handles a track with no artist', () => {
+  const h = fixtureDb();
+  const e = resolveAdd(h, { kind: 'song', track_id: trackId(h, 'Nimeta lugu') });
+  assert.equal(e.artist, null);
+  assert.equal(e.artist_norm, '');
+  assert.equal(e.id, entryId('song', ['', 'nimeta lugu']));
+  h.close();
+});
+
+test('resolveAdd builds an artist entry and an album entry', () => {
+  const h = fixtureDb();
+  const a = resolveAdd(h, { kind: 'artist', artist_id: artistId(h, 'Ansambel 50%') });
+  assert.equal(a.artist, 'Ansambel 50%');
+  assert.equal(a.show, null);
+  const b = resolveAdd(h, { kind: 'album', artist: 'Mägi', title: 'Esimene plaat' });
+  assert.equal(b.kind, 'album');
+  assert.equal(b.show, null);
+  assert.equal(b.id, entryId('album', ['mägi', 'esimene plaat']));
+  h.close();
+});
+
+test('resolveAdd returns null when the archive has no such row', () => {
+  const h = fixtureDb();
+  assert.equal(resolveAdd(h, { kind: 'show', content_id: 1 }), null);
+  assert.equal(resolveAdd(h, { kind: 'song', track_id: 999 }), null);
+  assert.equal(resolveAdd(h, { kind: 'artist', artist_id: 999 }), null);
+  h.close();
 });
