@@ -6,6 +6,7 @@ import routes from './routes.js';
 import { openDb, db, DB_PATH } from './db.js';
 import { createStore, setStore } from './annotations/index.js';
 import { createAnnotationTable, loadAnnotations } from './annotations/temp-table.js';
+import { createFavouritesStore, setFavouritesStore, loadFavourites } from './favourites/index.js';
 import { requireUser } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -114,21 +115,25 @@ try {
   process.exit(1);
 }
 
-// Non-fatal: annotations are a personal layer on top of the archive, not the
-// archive itself. Fail the request, not the process — the archive stays
-// fully readable even if the annotation store can't be constructed or
-// loaded. If the store never gets set, getStore() throws when called: reads
-// keep returning null annotations against the (empty) temp table, and writes
-// (Task 5) surface a loud error rather than silently no-op against nothing.
+// Non-fatal: annotations and favourites are a personal layer on top of the
+// archive, not the archive itself. Fail the request, not the process: the
+// archive stays fully readable even if a store can't be constructed or
+// loaded. If a store never gets set, its getStore() throws when called, so
+// writes answer 502 rather than silently no-op against nothing. Reads keep
+// returning null annotations against the (empty) temp table, and the
+// favourites cache stays empty until the next boot.
 try {
   const store = await createStore();
   setStore(store);
+  const favourites = await createFavouritesStore();
+  setFavouritesStore(favourites);
 
   if (owner) {
     loadAnnotations(handle, await store.list(owner));
+    loadFavourites(await favourites.list(owner));
   }
 } catch (err) {
-  console.error(`annotation store unavailable at boot: ${err.message}`);
+  console.error(`personal store unavailable at boot: ${err.message}`);
 }
 
 app.listen(port, () => console.log(`api + ui listening on :${port}`));
