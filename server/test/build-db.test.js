@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
-import { createDatabase, buildDatabase } from '../src/build-db.js';
+import { createDatabase, buildDatabase, DEFAULT_SERIES, DEFAULT_BROADCASTERS }
+  from '../src/build-db.js';
 
 function tmpFile() {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tlb-')), 'test.sqlite');
@@ -16,7 +17,7 @@ test('createDatabase applies the schema', () => {
   const tables = db.prepare(
     `SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`
   ).all().map(r => r.name);
-  assert.deepEqual(tables, ['artists', 'series', 'shows', 'tracks']);
+  assert.deepEqual(tables, ['artists', 'broadcasters', 'series', 'shows', 'tracks']);
   db.close();
 });
 
@@ -145,11 +146,13 @@ test('buildDatabase cleans up when the database cannot be created', () => {
   assert.ok(!fs.existsSync(out), 'must not ship a database');
 });
 
-function seriesFile(config) {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tlb-series-')), 'series.json');
+function jsonFile(name, config) {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tlb-json-')), name);
   fs.writeFileSync(file, JSON.stringify(config));
   return file;
 }
+const seriesFile = config => jsonFile('series.json', config);
+const broadcastersFile = config => jsonFile('broadcasters.json', config);
 
 test('buildDatabase sets archive_url from the series file', () => {
   const out = tmpFile();
@@ -174,4 +177,102 @@ test('buildDatabase refuses a series file naming an unknown slug', () => {
     /series\.json names unknown series: tsetshow/
   );
   assert.ok(!fs.existsSync(out), 'leaves no database behind on failure');
+});
+
+const ERR = { name: 'ERR', url: 'https://www.err.ee/' };
+
+test('buildDatabase inserts broadcasters from the broadcasters file', () => {
+  const out = tmpFile();
+  buildDatabase({
+    csvDir: FIXTURE_CSV, outPath: out,
+    broadcastersFile: broadcastersFile({ err: ERR }),
+  });
+
+  const db = new Database(out, { readonly: true, fileMustExist: true });
+  const rows = db.prepare(`SELECT slug, name, url FROM broadcasters`).all();
+  assert.deepEqual(rows, [{ slug: 'err', name: 'ERR', url: 'https://www.err.ee/' }]);
+  db.close();
+});
+
+test('buildDatabase links a series to its broadcaster', () => {
+  const out = tmpFile();
+  buildDatabase({
+    csvDir: FIXTURE_CSV, outPath: out,
+    broadcastersFile: broadcastersFile({ err: ERR }),
+    seriesFile: seriesFile({ testshow: { broadcaster: 'err' } }),
+  });
+
+  const db = new Database(out, { readonly: true, fileMustExist: true });
+  const row = db.prepare(`
+    SELECT b.slug FROM series s JOIN broadcasters b ON b.id = s.broadcaster_id
+    WHERE s.slug = 'testshow'`).get();
+  assert.equal(row?.slug, 'err');
+  db.close();
+});
+
+test('buildDatabase leaves broadcaster_id NULL for a series without one', () => {
+  const out = tmpFile();
+  buildDatabase({
+    csvDir: FIXTURE_CSV, outPath: out,
+    broadcastersFile: broadcastersFile({ err: ERR }),
+    seriesFile: seriesFile({ testshow: { archive_url: 'https://r2.err.ee/arhiiv/testshow' } }),
+  });
+
+  const db = new Database(out, { readonly: true, fileMustExist: true });
+  const row = db.prepare(`SELECT broadcaster_id FROM series WHERE slug = 'testshow'`).get();
+  assert.equal(row.broadcaster_id, null);
+  db.close();
+});
+
+test('buildDatabase refuses a series naming an unknown broadcaster', () => {
+  const out = tmpFile();
+  assert.throws(
+    () => buildDatabase({
+      csvDir: FIXTURE_CSV, outPath: out,
+      broadcastersFile: broadcastersFile({ err: ERR }),
+      seriesFile: seriesFile({ testshow: { broadcaster: 'bbc' } }),
+    }),
+    /series\.json names unknown broadcaster: bbc/
+  );
+  assert.ok(!fs.existsSync(out), 'leaves no database behind on failure');
+  assert.ok(!fs.existsSync(`${out}.building`), 'leaves no temp file behind on failure');
+});
+
+test('buildDatabase treats an explicit null broadcaster as none', () => {
+  const out = tmpFile();
+  buildDatabase({
+    csvDir: FIXTURE_CSV, outPath: out,
+    broadcastersFile: broadcastersFile({ err: ERR }),
+    seriesFile: seriesFile({ testshow: { broadcaster: null } }),
+  });
+
+  const db = new Database(out, { readonly: true, fileMustExist: true });
+  const row = db.prepare(`SELECT broadcaster_id FROM series WHERE slug = 'testshow'`).get();
+  assert.equal(row.broadcaster_id, null);
+  db.close();
+});
+
+test('buildDatabase refuses a broadcaster without a name', () => {
+  const out = tmpFile();
+  assert.throws(
+    () => buildDatabase({
+      csvDir: FIXTURE_CSV, outPath: out,
+      broadcastersFile: broadcastersFile({ err: { url: 'https://www.err.ee/' } }),
+    }),
+    /broadcasters\.json: err has no name/
+  );
+  assert.ok(!fs.existsSync(out), 'leaves no database behind on failure');
+  assert.ok(!fs.existsSync(`${out}.building`), 'leaves no temp file behind on failure');
+});
+
+// build:db cannot run in CI or on a fresh clone (the CSVs are not in git), so
+// the committed JSON files are checked against each other here instead.
+test('the committed series file only names broadcasters the broadcasters file defines', () => {
+  const broadcasters = JSON.parse(fs.readFileSync(DEFAULT_BROADCASTERS, 'utf8'));
+  const series = JSON.parse(fs.readFileSync(DEFAULT_SERIES, 'utf8'));
+  for (const [slug, { broadcaster }] of Object.entries(series)) {
+    if (broadcaster == null) continue;
+    assert.ok(Object.hasOwn(broadcasters, broadcaster),
+      `${slug} names unknown broadcaster ${broadcaster}`);
+  }
 });

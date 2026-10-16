@@ -3,13 +3,21 @@
 -- Foreign keys are enabled in code (see createDatabase), not here: the pragma
 -- is per-connection state and is a silent no-op inside a transaction.
 
+CREATE TABLE IF NOT EXISTS broadcasters (
+  id    INTEGER PRIMARY KEY,
+  slug  TEXT NOT NULL UNIQUE,
+  name  TEXT NOT NULL,                      -- as shown to the user: "ERR"
+  url   TEXT                                -- the broadcaster's home page
+);
+
 CREATE TABLE IF NOT EXISTS series (
-  id          INTEGER PRIMARY KEY,
-  slug        TEXT NOT NULL UNIQUE,
-  name        TEXT NOT NULL,
-  channel     TEXT,
-  archive_url TEXT,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  id             INTEGER PRIMARY KEY,
+  slug           TEXT NOT NULL UNIQUE,
+  name           TEXT NOT NULL,
+  channel        TEXT,
+  archive_url    TEXT,                       -- data/series.json, via build-db.js
+  broadcaster_id INTEGER REFERENCES broadcasters(id),  -- same
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS shows (

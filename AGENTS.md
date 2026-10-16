@@ -24,7 +24,7 @@ server/src/
   routes.js               every /api route; inline SQL through better-sqlite3 prepared statements
   db.js                   opens data/tracklists.sqlite read-only; db() returns the handle
   auth.js                 IAP assertion verification with jose; dev identity fallback
-  build-db.js             `npm run build:db`: CSVs + series.json -> data/tracklists.sqlite
+  build-db.js             `npm run build:db`: CSVs + the data/*.json files -> data/tracklists.sqlite
   importer.js             one CSV buffer -> rows; idempotent on content_id
   normalize.js            norm() and likeEscape() for search
   schema.sql              archive schema; applied at build time only
@@ -43,9 +43,11 @@ client/src/
   styles.css              plain CSS with custom properties on :root; no CSS framework
 data/
   tracklists.sqlite       the committed archive (about 4.4 MB); copied into the image as-is
-  series.json             per-series settings keyed by slug (archive_url); applied by build:db
+  broadcasters.json       broadcasters keyed by slug (name, url); applied by build:db
+  series.json             per-series settings keyed by slug (broadcaster, archive_url); same
   csv/                    scrape output; not in git; only needed to rebuild the archive
 infra/                    Terraform for GCP: Cloud Run, IAP, Firestore, Artifact Registry, WIF
+docs/database.md          reference for the archive, the annotation store and the temp table
 docs/superpowers/         design specs, implementation plans and a known-issues list
 .github/workflows/ci.yml  test, build and image on every PR and push; deploy from main only
 ```
@@ -61,13 +63,13 @@ Node 22 or newer. Run everything from the repo root.
 | `npm run dev` | API on :3000 with `--watch` plus Vite on :5173; open :5173 |
 | `npm run build` | React bundle into client/dist |
 | `npm start` | API only; serves client/dist when it exists |
-| `npm run build:db` | rebuild the archive from data/csv and data/series.json; commit the result |
+| `npm run build:db` | rebuild the archive from data/csv and data/*.json; commit the result |
 | `docker compose up -d --build` | one container on :3000, no IAP, SQLite annotations |
 
 There is no lint or format step. Match the surrounding code (see Conventions).
 
 Run `npm test` before claiming anything works. At the time of writing the
-suite is 148 tests: 147 pass and 1 is skipped (the live Firestore contract
+suite is 155 tests: 154 pass and 1 is skipped (the live Firestore contract
 test, which needs FIRESTORE_TEST_PROJECT). A few `console.warn` lines from
 auth.js during the run are expected output from the failure-path tests.
 
@@ -145,6 +147,10 @@ production wrong.
   `docs:` prefix, but recent ones on main do not.
 - Stage only the files you touched. Never `git add -A`: the tree often
   carries the user's unrelated edits.
+- Once a task is complete and `npm test` passes, commit and push to main
+  without asking. A push to main deploys to production through ci.yml, so
+  the test run has to be the one you just did on the final tree, not an
+  earlier one. Half-done work stays on a branch.
 
 ## Environment variables
 
@@ -193,8 +199,10 @@ Annotations section has the same table with more context.
 - Loosen the validatePatch limits (notes 4000 characters, 20 tags, 40
   characters each) without updating the README.
 - Raise max_instances above 1.
-- Run `terraform apply` or `terraform destroy`, push to main, or change GitHub
-  repository variables. Those are the user's calls.
+- Run `terraform apply` or `terraform destroy`, or change GitHub repository
+  variables. Those are the user's calls.
+- Push to main with failing or unrun tests, or with a task still half-done.
+  See Conventions for when a push to main is allowed.
 - Commit anything under .omc/ or .superpowers/. Both are local tooling state.
   .omc/ is in the root .gitignore; .superpowers/sdd/ is ignored only by its
   own nested ignore-all .gitignore, so a fresh clone has no such protection.
@@ -202,6 +210,8 @@ Annotations section has the same table with more context.
 ## Pointers
 
 - README.md: scripts, import rules, schema, annotations design, API table.
+- docs/database.md: every table and column, the build pipeline, the annotation
+  shape and stores, and the temp table invariants.
 - infra/README.md: request and deploy diagrams, bootstrap, IAP rollout
   runbook, rollback notes.
 - docs/superpowers/specs/: why things are the way they are.
