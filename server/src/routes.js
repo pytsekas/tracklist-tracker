@@ -22,6 +22,14 @@ const size = q => Math.min(500, Math.max(1, Number(q.pageSize) || 100));
 const LIKE_ESC = "ESCAPE '\\'";
 const needle = q => `%${likeEscape(norm(q))}%`;
 
+// Membership in the favourites cache, computed from the row's display fields.
+// norm() here gives the same strings the importer put in the *_norm columns,
+// so recomputing is equivalent to selecting them and leaves the SQL alone.
+const markShow = row => ({ ...row, favourite_id: favouriteIdOf('show', [String(row.content_id)]) });
+const markSong = row =>
+  ({ ...row, favourite_id: favouriteIdOf('song', [norm(row.artist), norm(row.title)]) });
+const markArtist = row => ({ ...row, favourite_id: favouriteIdOf('artist', [norm(row.name)]) });
+
 /* ---------------------------------- stats --------------------------------- */
 
 router.get('/stats', (_req, res, next) => {
@@ -79,7 +87,7 @@ router.get('/series/:slug/shows', (req, res, next) => {
 
     const { total } = db().prepare(`SELECT COUNT(*) AS total ${from}`).get(...args);
 
-    res.json({ rows: rows.map(withAnnotation), total, page: p, pageSize: ps });
+    res.json({ rows: rows.map(withAnnotation).map(markShow), total, page: p, pageSize: ps });
   } catch (e) { next(e); }
 });
 
@@ -100,7 +108,7 @@ router.get('/shows/:id', (req, res, next) => {
       FROM tracks t LEFT JOIN artists a ON a.id = t.artist_id
       WHERE t.show_id = ? ORDER BY t.position`).all(req.params.id);
     const { annotation, ...rest } = withAnnotation(show);
-    res.json({ show: rest, tracks, annotation });
+    res.json({ show: markShow(rest), tracks: tracks.map(markSong), annotation });
   } catch (e) { next(e); }
 });
 
@@ -139,7 +147,7 @@ router.get('/tracks', (req, res, next) => {
       JOIN series s ON s.id = sh.series_id
       ${clause}`).get(...args);
 
-    res.json({ rows, total, page: p, pageSize: ps });
+    res.json({ rows: rows.map(markSong), total, page: p, pageSize: ps });
   } catch (e) { next(e); }
 });
 
@@ -168,7 +176,7 @@ router.get('/artists', (req, res, next) => {
 
     const { total } = db().prepare(
       `SELECT COUNT(*) AS total FROM artists a ${clause}`).get(...args);
-    res.json({ rows, total, page: p, pageSize: ps });
+    res.json({ rows: rows.map(markArtist), total, page: p, pageSize: ps });
   } catch (e) { next(e); }
 });
 
@@ -184,7 +192,7 @@ router.get('/artists/:id', (req, res, next) => {
       JOIN series s ON s.id = sh.series_id
       WHERE t.artist_id = ?
       ORDER BY sh.show_date DESC`).all(req.params.id);
-    res.json({ artist, tracks });
+    res.json({ artist: markArtist(artist), tracks });
   } catch (e) { next(e); }
 });
 

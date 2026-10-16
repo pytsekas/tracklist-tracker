@@ -198,3 +198,55 @@ test('DELETE removes the entry, is idempotent, and a later PATCH answers 404', a
   assert.equal((await send('PATCH', `/api/favourites/${id}`, { done: true })).status, 404);
   assert.equal((await send('DELETE', '/api/favourites/nope')).status, 400);
 });
+
+/* ------------------------- membership on archive routes ------------------------- */
+
+test('favourite_id marks a show on the series listing and the show page', async () => {
+  const id = entryId('show', ['1610000001']);
+  const listing = await send('GET', '/api/series/testshow/shows');
+  const row = listing.body.rows.find(r => r.content_id === 1610000001);
+  assert.equal(row.favourite_id, id);
+  const other = listing.body.rows.find(r => r.content_id === 1610000003);
+  assert.equal(other.favourite_id, null);
+
+  const page = await send('GET', `/api/shows/${showId(1610000001)}`);
+  assert.equal(page.body.show.favourite_id, id);
+  assert.equal(page.body.show.title, 'Testsaade. Esimene', 'the show fields are untouched');
+});
+
+test('favourite_id marks a song on the show page and the tracks search', async () => {
+  const id = entryId('song', ['mägi', 'õhtu jõuab']);
+  const page = await send('GET', `/api/shows/${showId(1610000001)}`);
+  const byTitle = Object.fromEntries(page.body.tracks.map(t => [t.title, t.favourite_id]));
+  assert.equal(byTitle['Õhtu jõuab'], id);
+  assert.equal(byTitle['Teine lugu'], null);
+
+  const search = await send('GET', '/api/tracks?q=jõuab');
+  assert.equal(search.body.rows[0].favourite_id, id);
+});
+
+test('favourite_id marks a song whose track has no artist', async () => {
+  const r = await post({ kind: 'song', track_id: trackId('Nimeta lugu') });
+  assert.equal(r.status, 201);
+  const page = await send('GET', `/api/shows/${showId(1610000001)}`);
+  const t = page.body.tracks.find(t => t.title === 'Nimeta lugu');
+  assert.equal(t.favourite_id, r.body.id);
+});
+
+test('favourite_id marks an artist on the list and the artist page', async () => {
+  const id = entryId('artist', ['ansambel 50%']);
+  const list = await send('GET', '/api/artists');
+  const byName = Object.fromEntries(list.body.rows.map(a => [a.name, a.favourite_id]));
+  assert.equal(byName['Ansambel 50%'], id);
+  assert.equal(byName['Mägi'], null);
+
+  const page = await send('GET', `/api/artists/${artistId('Ansambel 50%')}`);
+  assert.equal(page.body.artist.favourite_id, id);
+});
+
+test('favourite_id goes back to null after a delete', async () => {
+  const id = entryId('artist', ['ansambel 50%']);
+  assert.equal((await send('DELETE', `/api/favourites/${id}`)).status, 204);
+  const page = await send('GET', `/api/artists/${artistId('Ansambel 50%')}`);
+  assert.equal(page.body.artist.favourite_id, null);
+});
