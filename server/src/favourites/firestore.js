@@ -15,8 +15,10 @@ const toEntry = (id, data) => ({
   notes: data.notes ?? null,
   done: data.done ?? false,
   done_at: data.done_at ?? null,
-  added_at: data.added_at,
-  updated_at: data.updated_at ?? data.added_at,
+  // A hand-made document without a timestamp must not break the list sort;
+  // it sorts last.
+  added_at: data.added_at ?? '',
+  updated_at: data.updated_at ?? data.added_at ?? '',
   meta: data.meta ?? null,
 });
 

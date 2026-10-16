@@ -191,9 +191,10 @@ Annotations section has the same table with more context.
   alternatives and non-goals (no multi-user, no annotations on tracks or
   artists, no full-text search over notes, no change to the import pipeline
   from the annotation work).
-- docs/superpowers/2026-09-22-show-annotations-known-issues.md lists minor
-  defects that were seen and deliberately left. Check it before fixing
-  something that may be an accepted trade-off, and do not re-report its items.
+- docs/superpowers/2026-09-22-show-annotations-known-issues.md and
+  docs/superpowers/2026-10-16-favourites-known-issues.md list minor
+  defects that were seen and deliberately left. Check them before fixing
+  something that may be an accepted trade-off, and do not re-report their items.
 - Known and accepted: `/api/artists` rows and total can disagree, because the
   rows join through tracks while total counts every artist. Out of scope
   unless asked.

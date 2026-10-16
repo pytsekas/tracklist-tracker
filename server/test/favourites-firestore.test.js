@@ -107,3 +107,11 @@ test('list maps document ids back onto entries', async () => {
   const all = await createFirestoreFavourites({ projectId: 'p', client }).list(OWNER);
   assert.deepEqual(all.get(SONG.id), SONG);
 });
+
+test('list tolerates a document without added_at', async () => {
+  const { added_at, updated_at, ...data } = withoutId(SONG);
+  const client = clientWith({ get: async () => ({ docs: [{ id: SONG.id, data: () => data }] }) });
+  const all = await createFirestoreFavourites({ projectId: 'p', client }).list(OWNER);
+  assert.equal(all.get(SONG.id).added_at, '');
+  assert.equal(all.get(SONG.id).updated_at, '');
+});

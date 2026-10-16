@@ -5,7 +5,7 @@
 // constructs its retry config with `{}` as the override argument — hardcoded,
 // not sourced from anything passed to the `Firestore` constructor), so it
 // cannot be shortened through public settings. Left alone, a Firestore outage
-// would make every annotation write hang for ~42s before the 502 the spec
+// would make every store write hang for ~42s before the 502 the spec
 // promises, burning Cloud Run request time for nothing. Racing every call
 // against a short, driver-owned deadline is the only way to keep that
 // promise; the timeout is a production feature, not a test device.

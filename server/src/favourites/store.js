@@ -1,7 +1,7 @@
 /**
  * The favourites entry: its identity, its validation and its merge rule. Both
  * drivers (sqlite.js, firestore.js) store exactly this object and nothing more.
- * resolveAdd() lives here too (Task 3) because the entry's natural key comes
+ * resolveAdd() lives here too because the entry's natural key comes
  * from archive rows, and this is the one place that knows the key.
  */
 import { createHash } from 'node:crypto';
