@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, fmtDate, fmtNum } from '../api.js';
 import { useAsync } from '../components/useAsync.js';
 import Pager from '../components/Pager.jsx';
+import FavouriteButton from '../components/FavouriteButton.jsx';
 
 export default function Tracks() {
   const [input, setInput] = useState('');
@@ -41,7 +42,7 @@ export default function Tracks() {
         <>
           <div className="table-scroll">
             <table>
-              <thead><tr><th>Artist</th><th>Title</th><th>Series</th><th>Date</th></tr></thead>
+              <thead><tr><th>Artist</th><th>Title</th><th>Series</th><th>Date</th><th></th></tr></thead>
               <tbody>
                 {data.rows.map(r => (
                   <tr key={r.id}>
@@ -51,6 +52,11 @@ export default function Tracks() {
                     <td><Link to={`/shows/${r.show_id}`}>{r.title}</Link></td>
                     <td>{r.series_name}</td>
                     <td className="date">{fmtDate(r.show_date)}</td>
+                    <td>
+                      <FavouriteButton favouriteId={r.favourite_id}
+                                       add={{ kind: 'song', track_id: r.id }}
+                                       name={`${r.artist ?? 'unknown'} – ${r.title}`} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

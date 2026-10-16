@@ -38,7 +38,13 @@ export default function Artists() {
               <tbody>
                 {data.rows.map(r => (
                   <tr key={r.id}>
-                    <td><Link to={`/artists/${r.id}`}>{r.name}</Link></td>
+                    <td><Link to={`/artists/${r.id}`}>{r.name}</Link>
+                      {r.favourite_id && (
+                        <span className="badges">
+                          <span className="badge" title="In favourites" aria-label="In favourites">★</span>
+                        </span>
+                      )}
+                    </td>
                     <td className="num">{fmtNum(r.plays)}</td>
                     <td className="num">{r.series_count}</td>
                   </tr>
