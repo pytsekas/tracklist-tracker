@@ -580,8 +580,14 @@ holds a `Map<id, entry>` for the list route and for membership, and archive
 routes call `favouriteIdOf()` on each row after the query. The invariants:
 
 - Loaded at boot from `store.list(owner)`, in the same non-fatal block as the
-  annotations. If it fails, the list answers empty, `favourite_id` is null and
-  writes answer 502.
+  annotations. If the store cannot be constructed, the list answers empty,
+  `favourite_id` is null and writes answer 502. If only the load fails, writes
+  still reach the store, and the cache holds only entries written since boot
+  until the next boot reloads it.
+- That block is one try, so the steps are coupled. Both stores are constructed
+  before either is loaded, and the annotation load runs before the favourites
+  load. A construction failure in either store therefore skips both loads, and
+  a failed annotation load skips the favourites load.
 - Every write goes to the store first and the cache second, and the cache never
   leads the store. The store may briefly lead it, after a call that timed out
   but still committed.
