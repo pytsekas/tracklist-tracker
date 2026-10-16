@@ -80,7 +80,7 @@ export default function Mine() {
                   <td><Link to={`/series/${r.series_slug}`}>{r.series_name}</Link></td>
                   <td>
                     <Link to={`/shows/${r.id}`}>{r.title}</Link>
-                    <StateBadge annotation={r.annotation} />
+                    <StateBadge annotation={r.annotation} favouriteId={r.favourite_id} />
                   </td>
                 </tr>
               ))}

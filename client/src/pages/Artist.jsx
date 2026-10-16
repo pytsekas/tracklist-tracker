@@ -1,6 +1,8 @@
 import { Link, useParams } from 'react-router-dom';
 import { api, fmtDate, fmtNum } from '../api.js';
 import { useAsync } from '../components/useAsync.js';
+import FavouriteButton from '../components/FavouriteButton.jsx';
+import AddAlbum from '../components/AddAlbum.jsx';
 
 export default function Artist() {
   const { id } = useParams();
@@ -16,6 +18,12 @@ export default function Artist() {
     <>
       <h1>{artist.name}</h1>
       <p className="sub">{fmtNum(tracks.length)} plays · {fmtNum(distinct)} distinct tracks</p>
+      <div className="annotator-row">
+        <FavouriteButton favouriteId={artist.favourite_id}
+                         add={{ kind: 'artist', artist_id: artist.id }}
+                         name={artist.name} />
+        <AddAlbum artist={artist.name} />
+      </div>
       <div className="table-scroll">
         <table>
           <thead><tr><th>Title</th><th>Series</th><th>Show</th><th>Date</th></tr></thead>

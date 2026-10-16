@@ -10,21 +10,24 @@ import Pager from '../components/Pager.jsx';
  * reliably announced by screen readers, and a bare glyph like "✓" or "☆"
  * would otherwise convey nothing to them.
  */
-export function StateBadge({ annotation: a }) {
+export function StateBadge({ annotation: a, favouriteId = null }) {
   // A row can exist with every field falsy -- ticking "Listened" and then
   // unticking it leaves an annotation record behind, since there is no
   // "clear" action that removes it. Without this check that row would render
   // an empty <span className="badges">, whose margin-left shows up as an
   // unexplained gap that never goes away.
-  const hasState = a && (a.listened || a.want_to_listen || a.notes);
+  const hasState = favouriteId || (a && (a.listened || a.want_to_listen || a.notes));
   if (!hasState) return null;
   return (
     <span className="badges">
-      {a.listened && <span className="badge" title="Listened" aria-label="Listened">✓</span>}
-      {a.want_to_listen && (
+      {a?.listened && <span className="badge" title="Listened" aria-label="Listened">✓</span>}
+      {a?.want_to_listen && (
         <span className="badge" title="Want to listen" aria-label="Want to listen">☆</span>
       )}
-      {a.notes && <span className="badge" title="Has notes" aria-label="Has notes">✎</span>}
+      {a?.notes && <span className="badge" title="Has notes" aria-label="Has notes">✎</span>}
+      {favouriteId && (
+        <span className="badge" title="In favourites" aria-label="In favourites">★</span>
+      )}
     </span>
   );
 }
@@ -77,7 +80,7 @@ export default function SeriesShows() {
                   <td className="date">{fmtDate(r.show_date)}</td>
                   <td>
                     <Link to={`/shows/${r.id}`}>{r.title}</Link>
-                    <StateBadge annotation={r.annotation} />
+                    <StateBadge annotation={r.annotation} favouriteId={r.favourite_id} />
                   </td>
                   <td className="num">{r.track_count}</td>
                   <td><a href={r.url} target="_blank" rel="noreferrer">open</a></td>

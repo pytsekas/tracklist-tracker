@@ -12,7 +12,8 @@ tracklists: series, shows (episodes), tracks, with artists cross-referenced.
 The archive is a read-only SQLite file committed to the repo and baked into the
 container image. On top of it sits a personal annotation layer (listened,
 notes, queue) stored in Firestore in production and in a local
-SQLite file in development. It deploys to Cloud Run behind Identity-Aware Proxy
+SQLite file in development, and a favourites list of shows, songs, artists and
+albums. It deploys to Cloud Run behind Identity-Aware Proxy
 with one allowlisted Google account.
 
 ## Layout
@@ -34,12 +35,19 @@ server/src/
     sqlite.js             dev and test driver (data/annotations.sqlite, gitignored)
     firestore.js          production driver; every call has a 5 s deadline
     temp-table.js         TEMP TABLE on the read-only connection; the JOIN and COLUMNS fragments
+  firestore-timeout.js    withTimeout() and the 5 s deadline, shared by both Firestore drivers
+  favourites/
+    store.js              entry shape, entryId(), validateAdd(), validatePatch(), applyPatch(), resolveAdd()
+    index.js              driver selection, process-wide store handle, the in-process cache, favouriteIdOf()
+    sqlite.js             dev and test driver (a table in data/annotations.sqlite)
+    firestore.js          production driver; annotations/{owner}/favourites/{id}
 server/test/              node:test suites; fixtures/csv/: 1 series, 3 shows, 4 tracks, 2 artists
 client/src/
   main.jsx, App.jsx       React 18 + React Router 6; the route table is in App.jsx
   api.js                  the only fetch wrapper, plus fmtDate / fmtNum
-  pages/                  one file per route
-  components/             Annotator (per-field PATCH editor), Pager, useAsync
+  lookup.js               lookupLinks(entry): Spotify, Discogs, Bandcamp and MusicBrainz links
+  pages/                  one file per route (Favourites.jsx is the favourites list)
+  components/             Annotator (per-field PATCH editor), FavouriteButton, AddAlbum, Pager, useAsync
   styles.css              plain CSS with custom properties on :root; no CSS framework
 data/
   tracklists.sqlite       the committed archive (about 4.4 MB); copied into the image as-is
@@ -69,8 +77,8 @@ Node 22 or newer. Run everything from the repo root.
 There is no lint or format step. Match the surrounding code (see Conventions).
 
 Run `npm test` before claiming anything works. At the time of writing the
-suite is 149 tests: 148 pass and 1 is skipped (the live Firestore contract
-test, which needs FIRESTORE_TEST_PROJECT). A few `console.warn` lines from
+suite is 211 tests: 209 pass and 2 are skipped (the live Firestore contract
+tests, which need FIRESTORE_TEST_PROJECT). A few `console.warn` lines from
 auth.js during the run are expected output from the failure-path tests.
 
 ## Invariants
@@ -115,6 +123,13 @@ production wrong.
 10. **The annotation store must not take the process down.** Driver failures
     surface as 502 through unavailable(); boot continues without a store and
     the archive stays readable.
+11. **Favourites live in an in-process Map, not a temp table.** Loaded at boot
+    from the store, kept in step store-first on every write, never joined in
+    SQL. Archive routes compute `favourite_id` from the Map after the query.
+    Entries key on a hash of kind plus natural identity (content_id, or
+    normalised artist and title, or normalised name), never on shows.id,
+    tracks.id or artists.id. `add` is create-only and `merge` consults the
+    store, so a lagging cache cannot overwrite or falsely 404.
 
 ## Conventions
 
@@ -176,9 +191,10 @@ Annotations section has the same table with more context.
   alternatives and non-goals (no multi-user, no annotations on tracks or
   artists, no full-text search over notes, no change to the import pipeline
   from the annotation work).
-- docs/superpowers/2026-09-22-show-annotations-known-issues.md lists minor
-  defects that were seen and deliberately left. Check it before fixing
-  something that may be an accepted trade-off, and do not re-report its items.
+- docs/superpowers/2026-09-22-show-annotations-known-issues.md and
+  docs/superpowers/2026-10-16-favourites-known-issues.md list minor
+  defects that were seen and deliberately left. Check them before fixing
+  something that may be an accepted trade-off, and do not re-report their items.
 - Known and accepted: `/api/artists` rows and total can disagree, because the
   rows join through tracks while total counts every artist. Out of scope
   unless asked.
@@ -196,8 +212,8 @@ Annotations section has the same table with more context.
 - Add a write path to the archive connection.
 - Add a test framework, a state library, a CSS framework or an ORM.
 - Change the IAP issuer, the audience format or the algorithm allowlist.
-- Loosen the validatePatch limit (notes 4000 characters) without updating the
-  README.
+- Loosen the validatePatch limit (notes 4000 characters; favourites album artist
+  and title 200 characters each) without updating the README.
 - Raise max_instances above 1.
 - Run `terraform apply` or `terraform destroy`, or change GitHub repository
   variables. Those are the user's calls.

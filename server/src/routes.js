@@ -5,6 +5,12 @@ import { getStore, withAnnotation } from './annotations/index.js';
 import { validatePatch } from './annotations/store.js';
 import { upsertAnnotationRow, removeAnnotationRow, ANNOTATION_JOIN, ANNOTATION_COLUMNS }
   from './annotations/temp-table.js';
+import {
+  getFavouritesStore, listFavourites, setFavourite, deleteFavourite, favouriteIdOf,
+} from './favourites/index.js';
+import {
+  KINDS, isEntryId, validateAdd, resolveAdd, validatePatch as validateFavouritePatch,
+} from './favourites/store.js';
 
 const router = express.Router();
 
@@ -15,6 +21,14 @@ const size = q => Math.min(500, Math.max(1, Number(q.pageSize) || 100));
 // columns. ESCAPE lets a needle contain a literal % or _.
 const LIKE_ESC = "ESCAPE '\\'";
 const needle = q => `%${likeEscape(norm(q))}%`;
+
+// Membership in the favourites cache, computed from the row's display fields.
+// norm() here gives the same strings the importer put in the *_norm columns,
+// so recomputing is equivalent to selecting them and leaves the SQL alone.
+const markShow = row => ({ ...row, favourite_id: favouriteIdOf('show', [String(row.content_id)]) });
+const markSong = row =>
+  ({ ...row, favourite_id: favouriteIdOf('song', [norm(row.artist), norm(row.title)]) });
+const markArtist = row => ({ ...row, favourite_id: favouriteIdOf('artist', [norm(row.name)]) });
 
 /* ---------------------------------- stats --------------------------------- */
 
@@ -73,7 +87,7 @@ router.get('/series/:slug/shows', (req, res, next) => {
 
     const { total } = db().prepare(`SELECT COUNT(*) AS total ${from}`).get(...args);
 
-    res.json({ rows: rows.map(withAnnotation), total, page: p, pageSize: ps });
+    res.json({ rows: rows.map(withAnnotation).map(markShow), total, page: p, pageSize: ps });
   } catch (e) { next(e); }
 });
 
@@ -94,7 +108,7 @@ router.get('/shows/:id', (req, res, next) => {
       FROM tracks t LEFT JOIN artists a ON a.id = t.artist_id
       WHERE t.show_id = ? ORDER BY t.position`).all(req.params.id);
     const { annotation, ...rest } = withAnnotation(show);
-    res.json({ show: rest, tracks, annotation });
+    res.json({ show: markShow(rest), tracks: tracks.map(markSong), annotation });
   } catch (e) { next(e); }
 });
 
@@ -133,7 +147,7 @@ router.get('/tracks', (req, res, next) => {
       JOIN series s ON s.id = sh.series_id
       ${clause}`).get(...args);
 
-    res.json({ rows, total, page: p, pageSize: ps });
+    res.json({ rows: rows.map(markSong), total, page: p, pageSize: ps });
   } catch (e) { next(e); }
 });
 
@@ -162,7 +176,7 @@ router.get('/artists', (req, res, next) => {
 
     const { total } = db().prepare(
       `SELECT COUNT(*) AS total FROM artists a ${clause}`).get(...args);
-    res.json({ rows, total, page: p, pageSize: ps });
+    res.json({ rows: rows.map(markArtist), total, page: p, pageSize: ps });
   } catch (e) { next(e); }
 });
 
@@ -178,7 +192,7 @@ router.get('/artists/:id', (req, res, next) => {
       JOIN series s ON s.id = sh.series_id
       WHERE t.artist_id = ?
       ORDER BY sh.show_date DESC`).all(req.params.id);
-    res.json({ artist, tracks });
+    res.json({ artist: markArtist(artist), tracks });
   } catch (e) { next(e); }
 });
 
@@ -239,6 +253,94 @@ router.delete('/shows/:contentId/annotation', async (req, res, next) => {
     // throw here) but never ahead, and a boot reconciles it.
     await getStore().remove(req.user.email, contentId);
     removeAnnotationRow(db(), contentId);
+    res.status(204).end();
+  } catch (e) { next(e); }
+});
+
+/* ------------------------------- favourites -------------------------------- */
+
+/**
+ * Entries snapshot their names so they survive a rebuild; the archive ids the
+ * client needs for links are looked up fresh on every read and may be null
+ * when the archive no longer has the row.
+ */
+function withArchiveIds(entry) {
+  const show = entry.show
+    ? db().prepare('SELECT id, url FROM shows WHERE content_id = ?').get(entry.show.content_id)
+    : null;
+  const artist = entry.artist_norm
+    ? db().prepare('SELECT id FROM artists WHERE name_norm = ?').get(entry.artist_norm)
+    : null;
+  return {
+    ...entry,
+    show_id: show?.id ?? null,
+    show_url: show?.url ?? null,
+    artist_id: artist?.id ?? null,
+  };
+}
+
+router.get('/favourites', (req, res, next) => {
+  try {
+    const { done, kind } = req.query;
+    // An empty kind means "all": api.js drops empty params, and a hand-typed
+    // `?kind=` should not be an error.
+    if (kind && !KINDS.includes(kind)) {
+      return res.status(400).json({ error: `kind must be one of ${KINDS.join(', ')}` });
+    }
+    let rows = listFavourites();
+    if (done === 'true') rows = rows.filter(e => e.done);
+    if (done === 'false') rows = rows.filter(e => !e.done);
+    if (kind) rows = rows.filter(e => e.kind === kind);
+    res.json(rows.map(withArchiveIds));
+  } catch (e) { next(e); }
+});
+
+router.post('/favourites', async (req, res, next) => {
+  try {
+    const check = validateAdd(req.body);
+    if (!check.ok) return res.status(400).json({ error: check.error });
+    const candidate = resolveAdd(db(), check.add);
+    if (!candidate) return res.status(404).json({ error: 'not found' });
+
+    // Store first, cache second, with the same accepted gap as the annotation
+    // PATCH handler above. add() is create-only, so a cache that lags the
+    // store cannot make a repeat add overwrite notes or the done state.
+    const { created, entry } = await getFavouritesStore().add(req.user.email, candidate);
+    setFavourite(entry);
+    res.status(created ? 201 : 200).json(withArchiveIds(entry));
+  } catch (e) { next(e); }
+});
+
+function requireEntryId(req, res) {
+  if (!isEntryId(req.params.id)) {
+    res.status(400).json({ error: 'id must be 24 lowercase hex characters' });
+    return null;
+  }
+  return req.params.id;
+}
+
+router.patch('/favourites/:id', async (req, res, next) => {
+  try {
+    const id = requireEntryId(req, res);
+    if (id === null) return;
+    const check = validateFavouritePatch(req.body);
+    if (!check.ok) return res.status(400).json({ error: check.error });
+
+    // merge() asks the store, not the cache, whether the id exists: the
+    // store is the authority, and the cache may lag it.
+    const merged = await getFavouritesStore().merge(req.user.email, id, check.patch);
+    if (!merged) return res.status(404).json({ error: 'not found' });
+    setFavourite(merged);
+    res.json(withArchiveIds(merged));
+  } catch (e) { next(e); }
+});
+
+router.delete('/favourites/:id', async (req, res, next) => {
+  try {
+    const id = requireEntryId(req, res);
+    if (id === null) return;
+    await getFavouritesStore().remove(req.user.email, id);
+    deleteFavourite(id);
     res.status(204).end();
   } catch (e) { next(e); }
 });

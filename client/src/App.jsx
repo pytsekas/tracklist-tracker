@@ -6,6 +6,7 @@ import Tracks from './pages/Tracks.jsx';
 import Artists from './pages/Artists.jsx';
 import Artist from './pages/Artist.jsx';
 import Mine from './pages/Mine.jsx';
+import Favourites from './pages/Favourites.jsx';
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
             <NavLink to="/tracks">Tracks</NavLink>
             <NavLink to="/artists">Artists</NavLink>
             <NavLink to="/mine">Mine</NavLink>
+            <NavLink to="/favourites">Favourites</NavLink>
           </nav>
         </div>
       </header>
@@ -30,6 +32,7 @@ export default function App() {
           <Route path="/artists" element={<Artists />} />
           <Route path="/artists/:id" element={<Artist />} />
           <Route path="/mine" element={<Mine />} />
+          <Route path="/favourites" element={<Favourites />} />
           <Route path="*" element={<p className="empty">Not found.</p>} />
         </Routes>
       </main>
