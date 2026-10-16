@@ -1,12 +1,14 @@
 # Database structure
 
-Data lives in three places, and they are deliberately kept apart:
+Data lives in five places, and they are deliberately kept apart:
 
 | Store | What it holds | Where | Written by |
 | --- | --- | --- | --- |
 | **The archive** | series, shows, tracks, artists, broadcasters | `data/tracklists.sqlite`, committed, copied into the image | `npm run build:db` only; read-only at runtime |
 | **The annotation store** | one person's listened / notes / want-to-listen per show | Firestore in production, `data/annotations.sqlite` locally | the API, on every annotation write |
 | **The annotation temp table** | a copy of the owner's annotations for joining | a `TEMP TABLE` on the archive connection, in process | loaded at boot, updated after each successful store write |
+| **The favourites store** | one person's list of shows, songs, artists and albums to follow up on | Firestore in production, the same `data/annotations.sqlite` locally | the API, on every favourites write |
+| **The favourites cache** | a copy of the owner's favourites for reads and membership | a `Map` in process | loaded at boot, updated after each successful store write |
 
 The split exists because the archive is rebuilt wholesale from scrape output.
 Anything personal kept inside it would be destroyed on the next rebuild, so
@@ -16,7 +18,7 @@ reference for what is in each store and why it is shaped that way.
 
 Everything below is taken from `server/src/schema.sql`, `server/src/build-db.js`,
 `server/src/importer.js`, `server/src/normalize.js`, `server/src/routes.js` and
-`server/src/annotations/`. When this document and the code disagree, the code
+`server/src/annotations/` and `server/src/favourites/`. When this document and the code disagree, the code
 is right and this document needs fixing.
 
 ---
@@ -316,6 +318,11 @@ everything they match.
 | `GET /api/artists/:id` | `artists`, `tracks`, `shows`, `series` | date desc |
 | `GET /api/me` | nothing | |
 | `PATCH` and `DELETE /api/shows/:contentId/annotation` | `shows`, to confirm the episode exists; then the store and the temp table | |
+| `GET /api/favourites` | the favourites cache; then `shows` and `artists` for the live `show_id`, `show_url` and `artist_id` | `added_at` desc, then id |
+| `POST /api/favourites` | `shows`, `tracks` or `artists`, to build the entry; then the store and the cache | |
+| `PATCH` and `DELETE /api/favourites/:id` | the store, then the cache | |
+
+`GET /api/series/:slug/shows`, `/api/shows/:id`, `/api/tracks`, `/api/artists` and `/api/artists/:id` also carry a `favourite_id` per row, computed from the favourites cache after the query (section 5).
 
 Known and accepted: on `GET /api/artists` the rows query joins through `tracks`
 and so lists only artists with at least one play, while `total` counts every
@@ -457,7 +464,137 @@ skipped when no owner is configured.
 
 ---
 
-## 5. Changing the schema
+## 5. The favourites store
+
+A second personal list next to annotations: shows, songs, artists and albums
+to follow up on elsewhere. Code is in `server/src/favourites/`; the design and
+the rejected alternatives are in
+`docs/superpowers/specs/2026-10-16-favourites-design.md`.
+
+### The entry
+
+One object per favourite, identical in both stores. Defined in
+`server/src/favourites/store.js`.
+
+```
+id          string   24 hex chars, see Identity
+kind        string   'show' | 'song' | 'artist' | 'album'
+artist      string   display name; null for a show or a track with no artist
+title       string   show title, song title or album title; null for an artist
+artist_norm string   norm(artist); '' for a show or a track with no artist
+title_norm  string   norm(title); '' for an artist
+show        object   { content_id, title, show_date, series_name, series_slug }
+                     the episode itself for a show, the episode a song was added
+                     from, null for an artist or an album
+notes       string   or null; at most 4000 characters; blank is stored as null
+done        boolean
+done_at     string   ISO timestamp, set when done flips to true, null when false
+added_at    string   ISO timestamp
+updated_at  string   ISO timestamp
+meta        null     reserved for a later metadata fetch
+```
+
+The API returns this object plus, on reads, three live fields resolved from
+the archive: `show_id` and `show_url` from `show.content_id`, and `artist_id`
+from `artist_norm`. Each is null when the archive has no match. Entries
+snapshot names rather than archive ids, so they survive a rebuild.
+
+### Identity
+
+| kind | parts |
+| --- | --- |
+| show | `String(content_id)` |
+| song | `artist_norm`, `title_norm` |
+| artist | `artist_norm` |
+| album | `artist_norm`, `title_norm` |
+
+`entryId(kind, parts)` is `sha256(kind + '\n' + parts.join('\n'))` as lowercase
+hex, truncated to 24 characters. It is hashed because Firestore document ids
+cannot contain `/`, and `AC/DC` would. `norm()` is the one in `normalize.js`.
+A song and an album with the same artist and title are different entries
+because the kind is in the hash. A valid id in a route is exactly 24 lowercase
+hex characters; anything else is a 400.
+
+### Firestore (production)
+
+```
+annotations/{owner email}/favourites/{id}
+```
+
+Under the same owner document as the annotations' `shows` collection. The
+document holds the fields above except `id`, which is the document id. No
+index is needed: the only query is the whole subcollection by path. Every call
+goes through the shared 5 second deadline in `server/src/firestore-timeout.js`.
+
+### SQLite (development and tests)
+
+A table in the same file as the annotations, `data/annotations.sqlite`, on its
+own connection. The driver is chosen by the same `ANNOTATIONS_DRIVER` and
+`ANNOTATIONS_DB` variables.
+
+```sql
+CREATE TABLE IF NOT EXISTS favourites (
+  owner       TEXT    NOT NULL,
+  id          TEXT    NOT NULL,
+  kind        TEXT    NOT NULL,
+  artist      TEXT,
+  title       TEXT,
+  artist_norm TEXT    NOT NULL DEFAULT '',
+  title_norm  TEXT    NOT NULL DEFAULT '',
+  show        TEXT,
+  notes       TEXT,
+  done        INTEGER NOT NULL DEFAULT 0,
+  done_at     TEXT,
+  added_at    TEXT    NOT NULL,
+  updated_at  TEXT    NOT NULL,
+  meta        TEXT,
+  PRIMARY KEY (owner, id)
+);
+```
+
+`show` and `meta` hold JSON text or NULL. Booleans are 0/1.
+
+### The store interface
+
+Both drivers implement exactly this. `owner` is the email.
+
+```
+list(owner)              -> Map<id, entry>
+get(owner, id)           -> entry | null
+add(owner, entry)        -> { created: boolean, entry }   create only if absent
+merge(owner, id, patch)  -> entry | null                  null when absent
+remove(owner, id)        -> void                          idempotent
+close()
+```
+
+Every method wraps its failure in `unavailable()`, so a broken store answers
+502 as the annotation layer does. A patch carries `notes` (at most 4,000
+characters, blank stored as null) and `done`; `done_at` is set when `done`
+flips to true and cleared when it flips to false. Album `artist` and `title`
+are trimmed and limited to 200 characters each.
+
+### The cache
+
+Favourites are not joined in SQL, so there is no temp table. `favourites/index.js`
+holds a `Map<id, entry>` for the list route and for membership, and archive
+routes call `favouriteIdOf()` on each row after the query. The invariants:
+
+- Loaded at boot from `store.list(owner)`, in the same non-fatal block as the
+  annotations. If it fails, the list answers empty, `favourite_id` is null and
+  writes answer 502.
+- Every write goes to the store first and the cache second, and the cache never
+  leads the store. The store may briefly lead it, after a call that timed out
+  but still committed.
+- A boot reconciles by reloading the Map from the store.
+- `max_instances` stays 1 for the same reason as for the temp table: the Map is
+  per process.
+- `add` is create-only, and `merge` consults the store rather than the cache. A
+  lagging cache therefore cannot make a repeat add overwrite an existing
+  entry's notes and done state, or make a patch on a real entry answer 404.
+
+---
+
+## 6. Changing the schema
 
 1. Edit `server/src/schema.sql`. If a new column needs data, teach
    `build-db.js` or `importer.js` to fill it, and add the fixture expectation

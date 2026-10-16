@@ -7,6 +7,7 @@ Popikroonikad, Sander Varusk, Varuski teematund, Vibratsioon, Eesti Pops) in one
 * **UI** — React 18 + Vite, React Router
 * **Data** — SQLite, committed at `data/tracklists.sqlite` and baked into the image
 * **Annotations** — Firestore; listened / notes / want to listen, keyed on `content_id`
+* **Favourites** — Firestore; shows, songs, artists and albums to follow up on, keyed on a hash of their natural identity
 * **Import** — `npm run build:db` rebuilds it from CSVs; commit the result
 * **Deploy** — GitHub Actions builds every push to `main` onto Cloud Run (`infra/`)
 * **Access** — the whole site is behind Cloud Run IAP; one Google account
@@ -181,6 +182,35 @@ would serve stale rows. That holds in steady state; a deploy can briefly run
 one instance of each revision, and it self-heals from there too — see the
 comment on `max_instances` in `infra/variables.tf` for the full reasoning.
 
+### Favourites
+
+A second personal list sits next to annotations: shows, songs, artists and
+albums to follow up on elsewhere, each with a note, a done state and lookup
+links to Spotify, Discogs, Bandcamp and MusicBrainz computed from its artist
+and title. It is a different job from the queue: the queue is "listen to this
+episode in the archive", favourites is "go find this music".
+
+```
+annotations/{email}/favourites/{id}
+  kind, artist, title, artist_norm, title_norm, show, notes, done, done_at,
+  added_at, updated_at, meta
+```
+
+Entries are keyed on a hash of their kind and a natural identity, not on an
+archive id: `content_id` for a show, normalised artist and title for a song or
+an album, normalised name for an artist. The same song played in five episodes
+is one entry, and a rebuild of the archive orphans nothing because each entry
+snapshots the names and the episode it was added from. Only albums are typed
+in; everything else is added from an archive row and the server fills in the
+names.
+
+Favourites are not joined in SQL. At boot the server loads the list into an
+in-process Map, writes go to the durable store first and the Map second (the
+same rule as the temp table), and archive routes mark rows with `favourite_id`
+by looking the Map up after the query. `meta` is reserved for a later metadata
+fetch and is always `null` today. The design is in
+`docs/superpowers/specs/2026-10-16-favourites-design.md`.
+
 | Variable | Local | Cloud Run |
 | --- | --- | --- |
 | `ANNOTATIONS_DRIVER` | `sqlite` | `firestore` |
@@ -226,6 +256,10 @@ that a green `apply` does not surface on its own, is documented in
 | GET | `/api/tracks` | `?q=&series=&from=&to=&page=&pageSize=` |
 | GET | `/api/artists` | `?q=&page=` — ranked by play count |
 | GET | `/api/artists/:id` | every play, across all series |
+| GET | `/api/favourites` | the owner's list, newest first; `?done=` (`true` or `false`) and `?kind=` filter |
+| POST | `/api/favourites` | `{kind:'show',content_id}`, `{kind:'song',track_id}`, `{kind:'artist',artist_id}` or `{kind:'album',artist,title}`; 201 new, 200 existing |
+| PATCH | `/api/favourites/:id` | `{notes?, done?}` |
+| DELETE | `/api/favourites/:id` | 204, idempotent |
 | GET | `/healthz` | container healthcheck; 503 when the database is empty |
 
 ---
