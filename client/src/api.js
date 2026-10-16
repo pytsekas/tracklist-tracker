@@ -26,7 +26,6 @@ export const api = {
   artists:    (p)            => get('/artists', p),
   artist:     (id)           => get(`/artists/${id}`),
   me:               ()            => get('/me'),
-  tags:             ()            => get('/tags'),
   patchAnnotation:  (cid, patch)  => send('PATCH', `/shows/${cid}/annotation`, patch),
   deleteAnnotation: (cid)         => send('DELETE', `/shows/${cid}/annotation`),
 };

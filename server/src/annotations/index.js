@@ -52,10 +52,8 @@ export function annotationOf(row) {
   return {
     listened: !!row.ann_listened,
     listened_at: row.ann_listened_at,
-    rating: row.ann_rating,
     notes: row.ann_notes,
     want_to_listen: !!row.ann_want_to_listen,
-    tags: JSON.parse(row.ann_tags ?? '[]'),
     updated_at: row.ann_updated_at,
   };
 }

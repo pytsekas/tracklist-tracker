@@ -6,7 +6,7 @@ Popikroonikad, Sander Varusk, Varuski teematund, Vibratsioon, Eesti Pops) in one
 * **API** — Express (Node 22, ES modules)
 * **UI** — React 18 + Vite, React Router
 * **Data** — SQLite, committed at `data/tracklists.sqlite` and baked into the image
-* **Annotations** — Firestore; listened / rating / notes / tags, keyed on `content_id`
+* **Annotations** — Firestore; listened / notes / want to listen, keyed on `content_id`
 * **Import** — `npm run build:db` rebuilds it from CSVs; commit the result
 * **Deploy** — GitHub Actions builds every push to `main` onto Cloud Run (`infra/`)
 * **Access** — the whole site is behind Cloud Run IAP; one Google account
@@ -159,7 +159,7 @@ which is stable across a re-scrape in a way the autoincrement `shows.id` is not.
 
 ```
 annotations/{email}/shows/{content_id}
-  listened, listened_at, rating, notes, want_to_listen, tags[], updated_at
+  listened, listened_at, notes, want_to_listen, updated_at
 ```
 
 At boot the server loads them into a `TEMP TABLE` on the archive's read-only

@@ -5,7 +5,7 @@ Data lives in three places, and they are deliberately kept apart:
 | Store | What it holds | Where | Written by |
 | --- | --- | --- | --- |
 | **The archive** | series, shows, tracks, artists, broadcasters | `data/tracklists.sqlite`, committed, copied into the image | `npm run build:db` only; read-only at runtime |
-| **The annotation store** | one person's listened / rating / notes / tags per show | Firestore in production, `data/annotations.sqlite` locally | the API, on every annotation write |
+| **The annotation store** | one person's listened / notes / want-to-listen per show | Firestore in production, `data/annotations.sqlite` locally | the API, on every annotation write |
 | **The annotation temp table** | a copy of the owner's annotations for joining | a `TEMP TABLE` on the archive connection, in process | loaded at boot, updated after each successful store write |
 
 The split exists because the archive is rebuilt wholesale from scrape output.
@@ -314,7 +314,6 @@ everything they match.
 | `GET /api/tracks` | `tracks`, `artists`, `shows`, `series` | date desc, then position |
 | `GET /api/artists` | `artists` joined to `tracks` and `shows` | plays desc, then `name_norm` |
 | `GET /api/artists/:id` | `artists`, `tracks`, `shows`, `series` | date desc |
-| `GET /api/tags` | the temp table only, via `json_each(tags)` | count desc, then tag case-insensitively |
 | `GET /api/me` | nothing | |
 | `PATCH` and `DELETE /api/shows/:contentId/annotation` | `shows`, to confirm the episode exists; then the store and the temp table | |
 
@@ -339,15 +338,13 @@ One object per annotated show, identical in every store. Defined in
 | --- | --- | --- |
 | `listened` | boolean | |
 | `listened_at` | ISO timestamp or null | set to now by every write that includes `listened: true`, cleared by every write that includes `listened: false`; never set by the client |
-| `rating` | integer 1 to 5, or null | |
 | `notes` | string or null | at most 4,000 characters; an empty or whitespace-only string is stored as null |
 | `want_to_listen` | boolean | the queue |
-| `tags` | array of strings | trimmed, blanks dropped, deduplicated preserving order; at most 20 tags of at most 40 characters; diacritics kept, so `Mägi` and `Magi` are two tags |
 | `updated_at` | ISO timestamp | set on every write |
 
 Writes are `PATCH` merges, not whole-document replaces: only keys present in
-the body move. That is what lets a debounced notes save land after a star
-click without reverting the rating.
+the body move. That is what lets a debounced notes save land after a checkbox
+click without reverting it.
 
 The archive is the authority on which shows exist. A write to a `content_id`
 that is not in `shows` is a 404, and a non-integer one is a 400, checked
@@ -390,16 +387,14 @@ CREATE TABLE annotations (
   content_id     INTEGER NOT NULL,
   listened       INTEGER NOT NULL DEFAULT 0,
   listened_at    TEXT,
-  rating         INTEGER,
   notes          TEXT,
   want_to_listen INTEGER NOT NULL DEFAULT 0,
-  tags           TEXT    NOT NULL DEFAULT '[]',
   updated_at     TEXT    NOT NULL,
   PRIMARY KEY (owner, content_id)
 );
 ```
 
-Booleans are 0/1 and `tags` is JSON text. `npm test` and `npm run dev` use
+Booleans are 0/1. `npm test` and `npm run dev` use
 this driver, so neither needs a cloud project or an emulator.
 
 Both drivers wrap every failure in `unavailable()`, which the error handler
@@ -418,10 +413,8 @@ CREATE TEMP TABLE IF NOT EXISTS annotations (
   content_id     INTEGER PRIMARY KEY,
   listened       INTEGER NOT NULL DEFAULT 0,
   listened_at    TEXT,
-  rating         INTEGER,
   notes          TEXT,
   want_to_listen INTEGER NOT NULL DEFAULT 0,
-  tags           TEXT    NOT NULL DEFAULT '[]',
   updated_at     TEXT    NOT NULL
 );
 ```
@@ -438,8 +431,7 @@ else, reads included.
 Routes join it with `LEFT JOIN annotations a ON a.content_id = sh.content_id`
 (the `shows` table must be aliased `sh`) and select its columns prefixed
 `ann_`. The prefix matters: `shows` has its own `updated_at`, and without it
-the annotation's would silently replace the show's in `SELECT sh.*`. The
-`/api/tags` route reads this table alone, with `json_each(a.tags)`.
+the annotation's would silently replace the show's in `SELECT sh.*`.
 
 **The write order invariant.** A write goes to the durable store first; the
 temp table is updated only after the store has accepted it. The temp table may

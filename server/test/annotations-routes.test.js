@@ -64,31 +64,42 @@ test('PATCH creates an annotation and returns it', async () => {
 });
 
 test('a second PATCH changes only the keys it names', async () => {
-  await patch(`/api/shows/${SHOW}/annotation`, { rating: 5 });
+  await patch(`/api/shows/${SHOW}/annotation`, { want_to_listen: true });
   const { body } = await patch(`/api/shows/${SHOW}/annotation`, { notes: 'hea saade' });
   assert.equal(body.notes, 'hea saade');
-  assert.equal(body.rating, 5, 'the rating survives a notes-only patch');
+  assert.equal(body.want_to_listen, true, 'the queue flag survives a notes-only patch');
   assert.equal(body.listened, true, 'listened survives too');
 });
 
 test('the write is visible to the read routes immediately', async () => {
-  await patch(`/api/shows/${SHOW}/annotation`, { tags: ['suvi'] });
+  await patch(`/api/shows/${SHOW}/annotation`, { notes: 'suvi' });
   const res = await fetch(`${base}/api/series/testshow/shows`);
   const list = await res.json();
   const row = list.rows.find(r => r.content_id === SHOW);
-  assert.deepEqual(row.annotation.tags, ['suvi'], 'temp table updated in step with the store');
+  assert.equal(row.annotation.notes, 'suvi', 'temp table updated in step with the store');
 });
 
 test('PATCH with an explicit null clears a field', async () => {
-  await patch(`/api/shows/${SHOW}/annotation`, { rating: 4 });
-  const { body } = await patch(`/api/shows/${SHOW}/annotation`, { rating: null });
-  assert.equal(body.rating, null);
+  await patch(`/api/shows/${SHOW}/annotation`, { notes: 'hea' });
+  const { body } = await patch(`/api/shows/${SHOW}/annotation`, { notes: null });
+  assert.equal(body.notes, null);
 });
 
-test('PATCH rejects a bad rating with 400', async () => {
-  const { status, body } = await patch(`/api/shows/${SHOW}/annotation`, { rating: 9 });
+test('PATCH rejects rating as an unknown field with 400', async () => {
+  const { status, body } = await patch(`/api/shows/${SHOW}/annotation`, { rating: 4 });
   assert.equal(status, 400);
-  assert.match(body.error, /rating/);
+  assert.match(body.error, /unknown field: rating/);
+});
+
+test('GET /api/tags is gone', async () => {
+  const { status, body } = await send('GET', '/api/tags');
+  assert.equal(status, 404);
+  assert.deepEqual(body, { error: 'not found' });
+});
+
+test('?ratingMin= is no longer recognised and does not 400', async () => {
+  const res = await fetch(`${base}/api/series/testshow/shows?ratingMin=abc`);
+  assert.equal(res.status, 200);
 });
 
 test('PATCH rejects an unknown field with 400', async () => {
@@ -106,12 +117,6 @@ test('PATCH rejects over-long notes with 400', async () => {
   assert.equal(status, 400);
 });
 
-test('PATCH rejects too many tags with 400', async () => {
-  const tags = Array.from({ length: 21 }, (_, i) => `t${i}`);
-  const { status } = await patch(`/api/shows/${SHOW}/annotation`, { tags });
-  assert.equal(status, 400);
-});
-
 test('PATCH on a content_id not in the archive is 404', async () => {
   const { status } = await patch('/api/shows/9999999999/annotation', { listened: true });
   assert.equal(status, 404);
@@ -120,15 +125,6 @@ test('PATCH on a content_id not in the archive is 404', async () => {
 test('PATCH on a non-numeric content_id is 400', async () => {
   const { status } = await patch('/api/shows/abc/annotation', { listened: true });
   assert.equal(status, 400);
-});
-
-test('GET /api/tags counts distinct tags', async () => {
-  await patch(`/api/shows/${SHOW}/annotation`, { tags: ['suvi', 'intervjuu'] });
-  await patch('/api/shows/1610000002/annotation', { tags: ['suvi'] });
-  const { body } = await send('GET', '/api/tags');
-  const suvi = body.find(t => t.tag === 'suvi');
-  assert.equal(suvi.count, 2);
-  assert.ok(body.some(t => t.tag === 'intervjuu'));
 });
 
 test('DELETE removes the annotation from store and temp table', async () => {

@@ -11,7 +11,7 @@ A single-user web app for browsing scraped ERR (Estonian public radio)
 tracklists: series, shows (episodes), tracks, with artists cross-referenced.
 The archive is a read-only SQLite file committed to the repo and baked into the
 container image. On top of it sits a personal annotation layer (listened,
-rating, notes, tags, queue) stored in Firestore in production and in a local
+notes, queue) stored in Firestore in production and in a local
 SQLite file in development. It deploys to Cloud Run behind Identity-Aware Proxy
 with one allowlisted Google account.
 
@@ -69,7 +69,7 @@ Node 22 or newer. Run everything from the repo root.
 There is no lint or format step. Match the surrounding code (see Conventions).
 
 Run `npm test` before claiming anything works. At the time of writing the
-suite is 155 tests: 154 pass and 1 is skipped (the live Firestore contract
+suite is 149 tests: 148 pass and 1 is skipped (the live Firestore contract
 test, which needs FIRESTORE_TEST_PROJECT). A few `console.warn` lines from
 auth.js during the run are expected output from the failure-path tests.
 
@@ -196,8 +196,8 @@ Annotations section has the same table with more context.
 - Add a write path to the archive connection.
 - Add a test framework, a state library, a CSS framework or an ORM.
 - Change the IAP issuer, the audience format or the algorithm allowlist.
-- Loosen the validatePatch limits (notes 4000 characters, 20 tags, 40
-  characters each) without updating the README.
+- Loosen the validatePatch limit (notes 4000 characters) without updating the
+  README.
 - Raise max_instances above 1.
 - Run `terraform apply` or `terraform destroy`, or change GitHub repository
   variables. Those are the user's calls.

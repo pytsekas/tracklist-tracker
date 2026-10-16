@@ -3,28 +3,29 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EMPTY, applyPatch, unavailable } from './store.js';
 
+// A dev file created before 2026-10-16 still has the dropped `rating` and
+// `tags` columns. CREATE TABLE IF NOT EXISTS leaves them in place, the insert
+// below names its columns and never touches them, and their old defaults
+// (NULL and '[]') tolerate that, so no migration is needed: delete the
+// gitignored file if the leftovers bother you.
 const DDL = `
 CREATE TABLE IF NOT EXISTS annotations (
   owner          TEXT    NOT NULL,
   content_id     INTEGER NOT NULL,
   listened       INTEGER NOT NULL DEFAULT 0,
   listened_at    TEXT,
-  rating         INTEGER,
   notes          TEXT,
   want_to_listen INTEGER NOT NULL DEFAULT 0,
-  tags           TEXT    NOT NULL DEFAULT '[]',
   updated_at     TEXT    NOT NULL,
   PRIMARY KEY (owner, content_id)
 );`;
 
-/** DB row -> Annotation. Booleans are 0/1 and tags are JSON text at rest. */
+/** DB row -> Annotation. Booleans are 0/1 at rest. */
 const toAnnotation = row => ({
   listened: !!row.listened,
   listened_at: row.listened_at,
-  rating: row.rating,
   notes: row.notes,
   want_to_listen: !!row.want_to_listen,
-  tags: JSON.parse(row.tags),
   updated_at: row.updated_at,
 });
 
@@ -44,13 +45,12 @@ export function createSqliteStore(file) {
     'SELECT * FROM annotations WHERE owner = ? ORDER BY content_id');
   const upsert = handle.prepare(`
     INSERT INTO annotations
-      (owner, content_id, listened, listened_at, rating, notes, want_to_listen, tags, updated_at)
+      (owner, content_id, listened, listened_at, notes, want_to_listen, updated_at)
     VALUES
-      (@owner, @content_id, @listened, @listened_at, @rating, @notes, @want_to_listen, @tags, @updated_at)
+      (@owner, @content_id, @listened, @listened_at, @notes, @want_to_listen, @updated_at)
     ON CONFLICT (owner, content_id) DO UPDATE SET
       listened = excluded.listened, listened_at = excluded.listened_at,
-      rating = excluded.rating, notes = excluded.notes,
-      want_to_listen = excluded.want_to_listen, tags = excluded.tags,
+      notes = excluded.notes, want_to_listen = excluded.want_to_listen,
       updated_at = excluded.updated_at`);
   const del = handle.prepare(
     'DELETE FROM annotations WHERE owner = ? AND content_id = ?');
@@ -83,10 +83,8 @@ export function createSqliteStore(file) {
           content_id: id,
           listened: next.listened ? 1 : 0,
           listened_at: next.listened_at,
-          rating: next.rating,
           notes: next.notes,
           want_to_listen: next.want_to_listen ? 1 : 0,
-          tags: JSON.stringify(next.tags),
           updated_at: next.updated_at,
         });
         return next;

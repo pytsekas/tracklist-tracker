@@ -7,7 +7,6 @@ import { StateBadge } from './SeriesShows.jsx';
 const VIEWS = [
   { key: 'want',     label: 'Queue',        params: { want: 'true' } },
   { key: 'listened', label: 'Listened',     params: { listened: 'true' } },
-  { key: 'good',     label: 'Rated 4+',     params: { ratingMin: 4 } },
 ];
 
 // The server caps pageSize at 500 (server/src/routes.js `size()`), and the
@@ -31,10 +30,8 @@ async function fetchAllShows(slug, params) {
 
 export default function Mine() {
   const [view, setView] = useState('want');
-  const [tag, setTag] = useState('');
 
-  const tags = useAsync(() => api.tags(), []);
-  const params = { ...VIEWS.find(v => v.key === view).params, ...(tag ? { tag } : {}) };
+  const params = VIEWS.find(v => v.key === view).params;
 
   // Every series at once: the queue is not a per-series idea.
   const series = useAsync(() => api.series(), []);
@@ -46,7 +43,7 @@ export default function Mine() {
           .then(rows => rows.map(row => ({ ...row, series_name: s.name, series_slug: s.slug })))));
       return pages.flat().sort((a, b) => (b.show_date ?? '').localeCompare(a.show_date ?? ''));
     },
-    [series.data, view, tag]);
+    [series.data, view]);
 
   if (series.error) return <p className="err">{series.error.message}</p>;
   if (shows.loading || series.loading) return <p className="empty">Loading…</p>;
@@ -66,14 +63,6 @@ export default function Mine() {
                   aria-pressed={v.key === view}
                   onClick={() => setView(v.key)}>{v.label}</button>
         ))}
-        {(tags.data ?? []).length > 0 && (
-          <select value={tag} onChange={e => setTag(e.target.value)} aria-label="Filter by tag">
-            <option value="">All tags</option>
-            {tags.data.map(t => (
-              <option key={t.tag} value={t.tag}>{t.tag} ({t.count})</option>
-            ))}
-          </select>
-        )}
       </div>
 
       {rows.length === 0 ? (
