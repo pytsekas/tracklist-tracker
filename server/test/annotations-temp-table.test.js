@@ -11,6 +11,7 @@ import {
   upsertAnnotationRow, removeAnnotationRow,
   ANNOTATION_COLUMNS, ANNOTATION_JOIN,
 } from '../src/annotations/temp-table.js';
+import { annotationOf } from '../src/annotations/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_CSV = path.join(__dirname, 'fixtures/csv');
@@ -18,8 +19,8 @@ const FIXTURE_CSV = path.join(__dirname, 'fixtures/csv');
 let handle;
 
 const ann = over => ({
-  listened: false, listened_at: null, rating: null, notes: null,
-  want_to_listen: false, tags: [], updated_at: '2026-09-22T10:00:00.000Z', ...over,
+  listened: false, listened_at: null, notes: null,
+  want_to_listen: false, updated_at: '2026-09-22T10:00:00.000Z', ...over,
 });
 
 before(() => {
@@ -39,10 +40,10 @@ test('the archive connection is still read-only', () => {
 });
 
 test('loadAnnotations replaces the whole table', () => {
-  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true, rating: 5 })]]));
+  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true })]]));
   assert.equal(handle.prepare('SELECT COUNT(*) n FROM annotations').get().n, 1);
 
-  loadAnnotations(handle, new Map([[1610000002, ann({ rating: 2 })]]));
+  loadAnnotations(handle, new Map([[1610000002, ann({ notes: 'teine' })]]));
   const rows = handle.prepare('SELECT content_id FROM annotations').all();
   assert.deepEqual(rows.map(r => r.content_id), [1610000002], 'the earlier row is gone');
 });
@@ -56,12 +57,12 @@ test('booleans round-trip as 0/1', () => {
 
 test('upsertAnnotationRow inserts then updates one row', () => {
   loadAnnotations(handle, new Map());
-  upsertAnnotationRow(handle, 1610000001, ann({ rating: 3 }));
-  assert.equal(handle.prepare('SELECT rating FROM annotations WHERE content_id = 1610000001').get().rating, 3);
+  upsertAnnotationRow(handle, 1610000001, ann({ notes: 'esimene' }));
+  assert.equal(handle.prepare('SELECT notes FROM annotations WHERE content_id = 1610000001').get().notes, 'esimene');
 
-  upsertAnnotationRow(handle, 1610000001, ann({ rating: 5, notes: 'hea' }));
-  const row = handle.prepare('SELECT rating, notes FROM annotations WHERE content_id = 1610000001').get();
-  assert.equal(row.rating, 5);
+  upsertAnnotationRow(handle, 1610000001, ann({ listened: true, notes: 'hea' }));
+  const row = handle.prepare('SELECT listened, notes FROM annotations WHERE content_id = 1610000001').get();
+  assert.equal(row.listened, 1);
   assert.equal(row.notes, 'hea');
   assert.equal(handle.prepare('SELECT COUNT(*) n FROM annotations').get().n, 1);
 });
@@ -73,7 +74,7 @@ test('removeAnnotationRow deletes one row', () => {
 });
 
 test('the join exposes annotation columns and nulls for unannotated shows', () => {
-  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true, rating: 4, tags: ['suvi'] })]]));
+  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true, notes: 'hea' })]]));
   const rows = handle.prepare(`
     SELECT sh.content_id, ${ANNOTATION_COLUMNS}
     FROM shows sh ${ANNOTATION_JOIN}
@@ -81,11 +82,27 @@ test('the join exposes annotation columns and nulls for unannotated shows', () =
 
   const annotated = rows.find(r => r.content_id === 1610000001);
   assert.equal(annotated.ann_listened, 1);
-  assert.equal(annotated.ann_rating, 4);
-  assert.equal(annotated.ann_tags, '["suvi"]');
+  assert.equal(annotated.ann_notes, 'hea');
 
   const untouched = rows.find(r => r.content_id !== 1610000001);
   assert.equal(untouched.ann_listened, null, 'unannotated shows join to NULL');
+});
+
+test('the selected columns carry no rating or tags', () => {
+  assert.doesNotMatch(ANNOTATION_COLUMNS, /ann_rating|ann_tags/);
+});
+
+test('a loaded row round-trips through annotationOf without rating or tags', () => {
+  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true, notes: 'hea' })]]));
+  const row = handle.prepare(`
+    SELECT sh.content_id, ${ANNOTATION_COLUMNS}
+    FROM shows sh ${ANNOTATION_JOIN}
+    WHERE sh.content_id = 1610000001`).get();
+  const a = annotationOf(row);
+  assert.deepEqual(Object.keys(a).sort(),
+    ['listened', 'listened_at', 'notes', 'updated_at', 'want_to_listen']);
+  assert.equal(a.listened, true);
+  assert.equal(a.notes, 'hea');
 });
 
 test('the join does not clobber the show\'s own updated_at', () => {
@@ -108,15 +125,4 @@ test('unlistened filtering works in SQL', () => {
     WHERE COALESCE(a.listened, 0) = 0`).get().n;
   const total = handle.prepare('SELECT COUNT(*) n FROM shows').get().n;
   assert.equal(n, total - 1);
-});
-
-test('tag filtering works via json_each', () => {
-  loadAnnotations(handle, new Map([
-    [1610000001, ann({ tags: ['suvi', 'intervjuu'] })],
-    [1610000002, ann({ tags: ['talv'] })],
-  ]));
-  const rows = handle.prepare(`
-    SELECT sh.content_id FROM shows sh ${ANNOTATION_JOIN}, json_each(a.tags) j
-    WHERE j.value = ?`).all('suvi');
-  assert.deepEqual(rows.map(r => r.content_id), [1610000001]);
 });

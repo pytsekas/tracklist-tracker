@@ -5,10 +5,8 @@ import { EMPTY, applyPatch, unavailable } from './store.js';
 const toAnnotation = data => ({
   listened: data.listened ?? false,
   listened_at: data.listened_at ?? null,
-  rating: data.rating ?? null,
   notes: data.notes ?? null,
   want_to_listen: data.want_to_listen ?? false,
-  tags: data.tags ?? [],
   updated_at: data.updated_at ?? null,
 });
 

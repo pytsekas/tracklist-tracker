@@ -57,22 +57,6 @@ router.get('/series/:slug/shows', (req, res, next) => {
     if (req.query.listened === 'false') where.push('COALESCE(a.listened, 0) = 0');
     if (req.query.want === 'true')      where.push('COALESCE(a.want_to_listen, 0) = 1');
 
-    if (req.query.ratingMin) {
-      const min = Number(req.query.ratingMin);
-      if (!Number.isInteger(min) || min < 1 || min > 5) {
-        return res.status(400).json({ error: 'ratingMin must be an integer 1-5' });
-      }
-      where.push('a.rating >= ?');
-      args.push(min);
-    }
-
-    // Exact match, not LIKE: tags are chosen from a list, and `norm()` would
-    // fold Mägi and mägi together where the tag list keeps them apart.
-    if (req.query.tag) {
-      where.push(`EXISTS (SELECT 1 FROM json_each(a.tags) j WHERE j.value = ?)`);
-      args.push(req.query.tag);
-    }
-
     const clause = `WHERE ${where.join(' AND ')}`;
     const from = `
       FROM shows sh
@@ -201,16 +185,6 @@ router.get('/artists/:id', (req, res, next) => {
 /* ------------------------------ annotations -------------------------------- */
 
 router.get('/me', (req, res) => res.json({ email: req.user.email }));
-
-router.get('/tags', (_req, res, next) => {
-  try {
-    res.json(db().prepare(`
-      SELECT j.value AS tag, COUNT(*) AS count
-      FROM annotations a, json_each(a.tags) j
-      GROUP BY j.value
-      ORDER BY count DESC, tag COLLATE NOCASE`).all());
-  } catch (e) { next(e); }
-});
 
 /** The archive is the authority on which episodes exist. */
 function requireShow(req, res) {

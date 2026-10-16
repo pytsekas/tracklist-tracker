@@ -1,5 +1,11 @@
 # Personal annotations on shows, behind IAP
 
+> **2026-10-16:** `rating` and `tags` were removed from the annotation. They
+> were not being used. A separate favourites list is planned to take over the
+> job of marking things worth coming back to; until it lands, the queue is the
+> only such list. The body below is kept as the historical record and still
+> describes both fields.
+
 Date: 2026-09-22
 Status: approved design, pending implementation plan
 

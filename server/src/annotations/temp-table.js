@@ -17,10 +17,8 @@ CREATE TEMP TABLE IF NOT EXISTS annotations (
   content_id     INTEGER PRIMARY KEY,
   listened       INTEGER NOT NULL DEFAULT 0,
   listened_at    TEXT,
-  rating         INTEGER,
   notes          TEXT,
   want_to_listen INTEGER NOT NULL DEFAULT 0,
-  tags           TEXT    NOT NULL DEFAULT '[]',
   updated_at     TEXT    NOT NULL
 );`;
 
@@ -35,10 +33,8 @@ CREATE TEMP TABLE IF NOT EXISTS annotations (
 export const ANNOTATION_COLUMNS = `
   a.listened       AS ann_listened,
   a.listened_at    AS ann_listened_at,
-  a.rating         AS ann_rating,
   a.notes          AS ann_notes,
   a.want_to_listen AS ann_want_to_listen,
-  a.tags           AS ann_tags,
   a.updated_at     AS ann_updated_at`;
 
 /** What routes join. Expects the shows table to be aliased `sh`. */
@@ -52,22 +48,19 @@ const params = (contentId, a) => ({
   content_id: Number(contentId),
   listened: a.listened ? 1 : 0,
   listened_at: a.listened_at,
-  rating: a.rating,
   notes: a.notes,
   want_to_listen: a.want_to_listen ? 1 : 0,
-  tags: JSON.stringify(a.tags ?? []),
   updated_at: a.updated_at,
 });
 
 const UPSERT = `
 INSERT INTO annotations
-  (content_id, listened, listened_at, rating, notes, want_to_listen, tags, updated_at)
+  (content_id, listened, listened_at, notes, want_to_listen, updated_at)
 VALUES
-  (@content_id, @listened, @listened_at, @rating, @notes, @want_to_listen, @tags, @updated_at)
+  (@content_id, @listened, @listened_at, @notes, @want_to_listen, @updated_at)
 ON CONFLICT (content_id) DO UPDATE SET
   listened = excluded.listened, listened_at = excluded.listened_at,
-  rating = excluded.rating, notes = excluded.notes,
-  want_to_listen = excluded.want_to_listen, tags = excluded.tags,
+  notes = excluded.notes, want_to_listen = excluded.want_to_listen,
   updated_at = excluded.updated_at`;
 
 /** Replace the table wholesale. Used at boot, from store.list(). */

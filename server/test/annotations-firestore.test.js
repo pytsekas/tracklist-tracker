@@ -15,12 +15,12 @@ test('the Firestore driver satisfies the store contract', { skip }, async () => 
   try {
     assert.equal(await store.get(OWNER, SHOW), null);
 
-    const first = await store.merge(OWNER, SHOW, { listened: true, rating: 5 });
+    const first = await store.merge(OWNER, SHOW, { listened: true, want_to_listen: true });
     assert.equal(first.listened, true);
-    assert.equal(first.rating, 5);
+    assert.equal(first.want_to_listen, true);
 
     const second = await store.merge(OWNER, SHOW, { notes: 'hea' });
-    assert.equal(second.rating, 5, 'a notes-only patch preserves the rating');
+    assert.equal(second.want_to_listen, true, 'a notes-only patch preserves the queue flag');
     assert.equal(second.notes, 'hea');
 
     const all = await store.list(OWNER);

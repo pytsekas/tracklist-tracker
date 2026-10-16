@@ -7,17 +7,13 @@
 export const EMPTY = Object.freeze({
   listened: false,
   listened_at: null,
-  rating: null,
   notes: null,
   want_to_listen: false,
-  tags: [],
   updated_at: null,
 });
 
-const FIELDS = ['listened', 'rating', 'notes', 'want_to_listen', 'tags'];
+const FIELDS = ['listened', 'notes', 'want_to_listen'];
 const MAX_NOTES = 4000;
-const MAX_TAGS = 20;
-const MAX_TAG_LEN = 40;
 
 const bad = error => ({ ok: false, error });
 
@@ -42,14 +38,6 @@ export function validatePatch(body) {
     patch[key] = body[key];
   }
 
-  if ('rating' in body) {
-    const r = body.rating;
-    if (r !== null && (!Number.isInteger(r) || r < 1 || r > 5)) {
-      return bad('rating must be an integer 1-5, or null');
-    }
-    patch.rating = r;
-  }
-
   if ('notes' in body) {
     const n = body.notes;
     if (n !== null && typeof n !== 'string') return bad('notes must be a string or null');
@@ -60,20 +48,6 @@ export function validatePatch(body) {
     patch.notes = n === null || n.trim() === '' ? null : n;
   }
 
-  if ('tags' in body) {
-    if (!Array.isArray(body.tags)) return bad('tags must be an array');
-    if (body.tags.some(t => typeof t !== 'string')) return bad('tags must be strings');
-
-    // Trim, drop blanks, dedupe — order-preserving. Diacritics are left alone:
-    // Mägi and Magi are different tags on purpose.
-    const cleaned = [...new Set(body.tags.map(t => t.trim()).filter(Boolean))];
-    if (cleaned.length > MAX_TAGS) return bad(`at most ${MAX_TAGS} tags`);
-    if (cleaned.some(t => t.length > MAX_TAG_LEN)) {
-      return bad(`each tag must be at most ${MAX_TAG_LEN} characters`);
-    }
-    patch.tags = cleaned;
-  }
-
   if (Object.keys(patch).length === 0) return bad('no recognised fields to update');
   return { ok: true, patch };
 }
@@ -81,11 +55,10 @@ export function validatePatch(body) {
 /**
  * Field-level merge. Only keys present in `patch` move; everything else is
  * carried over untouched. This is what stops a debounced notes save from
- * reverting a rating set a moment earlier.
+ * reverting a listened tick made a moment earlier.
  */
 export function applyPatch(current, patch, now = new Date()) {
   const next = { ...EMPTY, ...current, ...patch };
-  next.tags = [...(patch.tags ?? current?.tags ?? [])];
 
   if ('listened' in patch) {
     next.listened_at = patch.listened ? now.toISOString() : null;

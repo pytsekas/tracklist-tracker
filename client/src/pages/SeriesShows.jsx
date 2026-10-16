@@ -16,7 +16,7 @@ export function StateBadge({ annotation: a }) {
   // "clear" action that removes it. Without this check that row would render
   // an empty <span className="badges">, whose margin-left shows up as an
   // unexplained gap that never goes away.
-  const hasState = a && (a.listened || a.want_to_listen || a.rating || a.notes || a.tags.length);
+  const hasState = a && (a.listened || a.want_to_listen || a.notes);
   if (!hasState) return null;
   return (
     <span className="badges">
@@ -24,13 +24,7 @@ export function StateBadge({ annotation: a }) {
       {a.want_to_listen && (
         <span className="badge" title="Want to listen" aria-label="Want to listen">☆</span>
       )}
-      {a.rating && (
-        <span className="badge" title={`Rated ${a.rating} of 5`} aria-label={`Rated ${a.rating} of 5`}>
-          {a.rating}★
-        </span>
-      )}
       {a.notes && <span className="badge" title="Has notes" aria-label="Has notes">✎</span>}
-      {a.tags.map(t => <span key={t} className="badge tagbadge">{t}</span>)}
     </span>
   );
 }
@@ -40,7 +34,6 @@ const FILTERS = [
   { key: 'unlistened', label: 'Not listened',  params: { listened: 'false' } },
   { key: 'listened',   label: 'Listened',      params: { listened: 'true' } },
   { key: 'want',       label: 'Queue',         params: { want: 'true' } },
-  { key: 'good',       label: 'Rated 4+',      params: { ratingMin: 4 } },
 ];
 
 export default function SeriesShows() {

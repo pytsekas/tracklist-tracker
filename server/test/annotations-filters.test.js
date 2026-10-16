@@ -96,9 +96,9 @@ test('?listened=true returns only listened shows', async () => {
 
 test('a show annotated but not listened still counts as unlistened', async () => {
   await reset();
-  await patch('/api/shows/1610000001/annotation', { rating: 3 });
+  await patch('/api/shows/1610000001/annotation', { notes: 'hea' });
   const { body } = await get('/api/series/testshow/shows?listened=false');
-  assert.equal(body.total, 3, 'rating a show does not mark it listened');
+  assert.equal(body.total, 3, 'a note does not mark a show listened');
 });
 
 test('?want=true returns only the queue', async () => {
@@ -108,46 +108,11 @@ test('?want=true returns only the queue', async () => {
   assert.deepEqual(body.rows.map(r => r.content_id), [1610000002]);
 });
 
-test('?tag= filters on an exact tag', async () => {
-  await reset();
-  await patch('/api/shows/1610000003/annotation', { tags: ['suvi', 'intervjuu'] });
-  await patch('/api/shows/1610000002/annotation', { tags: ['talv'] });
-  const { body } = await get('/api/series/testshow/shows?tag=suvi');
-  assert.deepEqual(body.rows.map(r => r.content_id), [1610000003]);
-});
-
-test('?tag= keeps diacritics distinct', async () => {
-  await reset();
-  await patch('/api/shows/1610000003/annotation', { tags: ['Mägi'] });
-  assert.equal((await get('/api/series/testshow/shows?tag=Magi')).body.total, 0, 'magi must not match Mägi');
-  assert.equal((await get('/api/series/testshow/shows?tag=M%C3%A4gi')).body.total, 1);
-});
-
-test('?ratingMin= filters on rating', async () => {
-  await reset();
-  await patch('/api/shows/1610000001/annotation', { rating: 5 });
-  await patch('/api/shows/1610000002/annotation', { rating: 2 });
-  const { body } = await get('/api/series/testshow/shows?ratingMin=4');
-  assert.deepEqual(body.rows.map(r => r.content_id), [1610000001]);
-});
-
-test('?ratingMin= excludes unrated shows', async () => {
-  await reset();
-  await patch('/api/shows/1610000001/annotation', { rating: 5 });
-  const { body } = await get('/api/series/testshow/shows?ratingMin=1');
-  assert.equal(body.total, 1, 'NULL rating is not >= 1');
-});
-
-test('?ratingMin= outside 1..5 is a 400', async () => {
-  assert.equal((await get('/api/series/testshow/shows?ratingMin=9')).status, 400);
-  assert.equal((await get('/api/series/testshow/shows?ratingMin=abc')).status, 400);
-});
-
 test('filters combine', async () => {
   await reset();
-  await patch('/api/shows/1610000001/annotation', { listened: true, rating: 5 });
-  await patch('/api/shows/1610000002/annotation', { listened: true, rating: 2 });
-  const { body } = await get('/api/series/testshow/shows?listened=true&ratingMin=4');
+  await patch('/api/shows/1610000001/annotation', { listened: true, want_to_listen: true });
+  await patch('/api/shows/1610000002/annotation', { listened: true });
+  const { body } = await get('/api/series/testshow/shows?listened=true&want=true');
   assert.equal(body.total, 1);
   assert.deepEqual(body.rows.map(r => r.content_id), [1610000001]);
 });
