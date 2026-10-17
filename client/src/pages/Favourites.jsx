@@ -1,29 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, fmtDate, fmtNum } from '../api.js';
+import { api, fmtDate, fmtCount } from '../api.js';
 import { useAsync } from '../components/useAsync.js';
 import AddAlbum from '../components/AddAlbum.jsx';
 import { lookupLinks } from '../lookup.js';
 
 const VIEWS = [
-  { key: 'open', label: 'Open', params: { done: 'false' } },
-  { key: 'done', label: 'Done', params: { done: 'true' } },
-  { key: 'all',  label: 'All',  params: {} },
+  { key: 'open', label: 'Lahtised', params: { done: 'false' } },
+  { key: 'done', label: 'Tehtud',   params: { done: 'true' } },
+  { key: 'all',  label: 'Kõik',     params: {} },
 ];
 
 const KINDS = [
-  { value: '',       label: 'All kinds' },
-  { value: 'show',   label: 'Shows' },
-  { value: 'song',   label: 'Songs' },
-  { value: 'artist', label: 'Artists' },
-  { value: 'album',  label: 'Albums' },
+  { value: '',       label: 'Kõik liigid' },
+  { value: 'show',   label: 'Saated' },
+  { value: 'song',   label: 'Lood' },
+  { value: 'artist', label: 'Esitajad' },
+  { value: 'album',  label: 'Albumid' },
 ];
 
-const KIND_LABEL = { show: 'Show', song: 'Song', artist: 'Artist', album: 'Album' };
+const KIND_LABEL = { show: 'Saade', song: 'Lugu', artist: 'Esitaja', album: 'Album' };
 
 /** What to call an entry in labels: its title, or the artist for an artist entry. */
 const nameOf = e => e.title ?? e.artist ?? e.kind;
 
+/** The "Põnev" page: the favourites list, things to look up and remember. */
 export default function Favourites() {
   const [view, setView] = useState('open');
   const [kind, setKind] = useState('');
@@ -31,27 +32,27 @@ export default function Favourites() {
   const list = useAsync(() => api.favourites(params), [view, kind]);
 
   // A local copy of the rows, so a save or a remove updates one row in place
-  // and a done tick under the Open view stays visible until the next fetch.
+  // and a done tick under the Lahtised view stays visible until the next fetch.
   const [rows, setRows] = useState([]);
   useEffect(() => { if (list.data) setRows(list.data); }, [list.data]);
 
   const replace = entry => setRows(rs => rs.map(r => (r.id === entry.id ? entry : r)));
   const drop = id => setRows(rs => rs.filter(r => r.id !== id));
-  // A new album is open, so show the Open view and let the server list it.
+  // A new album is open, so show the Lahtised view and let the server list it.
   const onAdded = () => { setView('open'); setKind(''); list.reload(); };
 
   if (list.error) return <p className="err">{list.error.message}</p>;
-  if (list.loading && rows.length === 0) return <p className="empty">Loading…</p>;
+  if (list.loading && rows.length === 0) return <p className="empty">Laadin…</p>;
 
   return (
     <>
-      <h1>Favourites</h1>
-      <p className="sub">{fmtNum(rows.length)} entries</p>
+      <h1>Põnev</h1>
+      <p className="sub">{fmtCount(rows.length, 'kirje', 'kirjet')}</p>
 
       <AddAlbum onAdded={onAdded} />
 
       <div className="filters">
-        <span className="group" role="group" aria-label="View">
+        <span className="group" role="group" aria-label="Vaade">
           {VIEWS.map(v => (
             <button key={v.key} type="button"
                     className={v.key === view ? 'chip on' : 'chip'}
@@ -59,20 +60,20 @@ export default function Favourites() {
                     onClick={() => setView(v.key)}>{v.label}</button>
           ))}
         </span>
-        <select value={kind} onChange={e => setKind(e.target.value)} aria-label="Kind">
+        <select value={kind} onChange={e => setKind(e.target.value)} aria-label="Liik">
           {KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
         </select>
       </div>
 
       {rows.length === 0 ? (
         <p className="empty">
-          Nothing here yet. Use the star on a show, a song or an artist to start this list.
+          Siin pole veel midagi. Märgi mõni lugu või esitaja põnevaks, et nimekiri tekiks.
         </p>
       ) : (
         <div className="table-scroll">
           <table>
             <thead>
-              <tr><th>Kind</th><th>What</th><th>Find on</th><th>Notes</th><th>Done</th><th></th></tr>
+              <tr><th>Liik</th><th>Kirje</th><th>Otsi</th><th>Märkmed</th><th>Tehtud</th><th></th></tr>
             </thead>
             <tbody>
               {rows.map(r => <Row key={r.id} entry={r} onChange={replace} onRemove={drop} />)}
@@ -87,7 +88,7 @@ export default function Favourites() {
 function What({ entry: e }) {
   const artist = e.artist_id
     ? <Link to={`/artists/${e.artist_id}`}>{e.artist}</Link>
-    : (e.artist ?? <span style={{ color: 'var(--muted)' }}>unknown</span>);
+    : (e.artist ?? <span style={{ color: 'var(--muted)' }}>teadmata</span>);
   const showLink = e.show && (e.show_id
     ? <Link to={`/shows/${e.show_id}`}>{e.show.title}</Link>
     : e.show.title);
@@ -106,7 +107,7 @@ function What({ entry: e }) {
       {artist} – {e.title}
       {e.kind === 'song' && e.show && (
         <span className="sub-line">
-          heard in {showLink} · {fmtDate(e.show.show_date)} · {e.show.series_name}
+          kuuldud saates {showLink} · {fmtDate(e.show.show_date)} · {e.show.series_name}
         </span>
       )}
     </>
@@ -184,21 +185,21 @@ function Row({ entry: e, onChange, onRemove }) {
         </span>
       </td>
       <td>
-        <textarea className="notes notes-small" rows={2} value={notes} placeholder="Notes…"
-                  aria-label={`Notes for ${name}`}
+        <textarea className="notes notes-small" rows={2} value={notes} placeholder="Märkmed…"
+                  aria-label={`Märkmed: ${name}`}
                   onChange={ev => onNotes(ev.target.value)} />
         <span className="annotator-state">
-          {saving ? 'Saving…' : error ? <span className="err">{error}</span> : null}
+          {saving ? 'Salvestan…' : error ? <span className="err">{error}</span> : null}
         </span>
       </td>
       <td>
-        <input type="checkbox" checked={e.done} aria-label={`Done: ${name}`}
+        <input type="checkbox" checked={e.done} aria-label={`Tehtud: ${name}`}
                onChange={ev => save({ done: ev.target.checked })} />
       </td>
       <td>
         <button type="button" className="chip" disabled={saving}
-                aria-label={`Remove ${name} from favourites`}
-                onClick={remove}>Remove</button>
+                aria-label={`Eemalda põnevate hulgast: ${name}`}
+                onClick={remove}>Eemalda</button>
       </td>
     </tr>
   );

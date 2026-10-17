@@ -6,7 +6,7 @@ Popikroonikad, Sander Varusk, Varuski teematund, Vibratsioon, Eesti Pops) in one
 * **API** — Express (Node 22, ES modules)
 * **UI** — React 18 + Vite, React Router
 * **Data** — SQLite, committed at `data/tracklists.sqlite` and baked into the image
-* **Annotations** — Firestore; listened / notes / want to listen, keyed on `content_id`
+* **Annotations** — Firestore; good / notes / want to listen, keyed on `content_id`
 * **Favourites** — Firestore; shows, songs, artists and albums to follow up on, keyed on a hash of their natural identity
 * **Import** — `npm run build:db` rebuilds it from CSVs; commit the result
 * **Deploy** — GitHub Actions builds every push to `main` onto Cloud Run (`infra/`)
@@ -160,8 +160,11 @@ which is stable across a re-scrape in a way the autoincrement `shows.id` is not.
 
 ```
 annotations/{email}/shows/{content_id}
-  listened, listened_at, notes, want_to_listen, updated_at
+  good, good_at, notes, want_to_listen, updated_at
 ```
+
+`good` is the "pretty good" flag and `notes` is the comment on why; `good_at`
+records when the flag was set. `want_to_listen` is the queue.
 
 At boot the server loads them into a `TEMP TABLE` on the archive's read-only
 connection. That is the whole trick: SQLite keeps its temp database in a
@@ -251,7 +254,7 @@ that a green `apply` does not surface on its own, is documented in
 | --- | --- | --- |
 | GET | `/api/stats` | row counts |
 | GET | `/api/series` | series with show/track counts and date range |
-| GET | `/api/series/:slug/shows` | `?page=&pageSize=` |
+| GET | `/api/series/:slug/shows` | `?page=&pageSize=&want=true&good=true` |
 | GET | `/api/shows/:id` | episode plus its tracks |
 | GET | `/api/tracks` | `?q=&series=&from=&to=&page=&pageSize=` |
 | GET | `/api/artists` | `?q=&page=` — ranked by play count |

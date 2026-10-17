@@ -36,3 +36,5 @@ export const api = {
 
 export const fmtDate = d => (d ? String(d).slice(0, 10).split('-').reverse().join('.') : '—');
 export const fmtNum  = n => Number(n || 0).toLocaleString('et-EE');
+/** A count with its noun: "1 saade", "12 saadet". */
+export const fmtCount = (n, one, many) => `${fmtNum(n)} ${Number(n) === 1 ? one : many}`;

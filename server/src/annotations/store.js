@@ -5,14 +5,14 @@
 
 /** Every field at rest. Frozen: callers must copy before mutating. */
 export const EMPTY = Object.freeze({
-  listened: false,
-  listened_at: null,
+  good: false,
+  good_at: null,
   notes: null,
   want_to_listen: false,
   updated_at: null,
 });
 
-const FIELDS = ['listened', 'notes', 'want_to_listen'];
+const FIELDS = ['good', 'notes', 'want_to_listen'];
 const MAX_NOTES = 4000;
 
 const bad = error => ({ ok: false, error });
@@ -32,7 +32,7 @@ export function validatePatch(body) {
 
   const patch = {};
 
-  for (const key of ['listened', 'want_to_listen']) {
+  for (const key of ['good', 'want_to_listen']) {
     if (!(key in body)) continue;
     if (typeof body[key] !== 'boolean') return bad(`${key} must be a boolean`);
     patch[key] = body[key];
@@ -55,13 +55,13 @@ export function validatePatch(body) {
 /**
  * Field-level merge. Only keys present in `patch` move; everything else is
  * carried over untouched. This is what stops a debounced notes save from
- * reverting a listened tick made a moment earlier.
+ * reverting a "pretty good" tick made a moment earlier.
  */
 export function applyPatch(current, patch, now = new Date()) {
   const next = { ...EMPTY, ...current, ...patch };
 
-  if ('listened' in patch) {
-    next.listened_at = patch.listened ? now.toISOString() : null;
+  if ('good' in patch) {
+    next.good_at = patch.good ? now.toISOString() : null;
   }
   next.updated_at = now.toISOString();
   return next;

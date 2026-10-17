@@ -4,8 +4,8 @@ import { withTimeout, FIRESTORE_TIMEOUT_MS } from '../firestore-timeout.js';
 
 /** Firestore doc -> Annotation. Absent fields fall back to EMPTY's defaults. */
 const toAnnotation = data => ({
-  listened: data.listened ?? false,
-  listened_at: data.listened_at ?? null,
+  good: data.good ?? false,
+  good_at: data.good_at ?? null,
   notes: data.notes ?? null,
   want_to_listen: data.want_to_listen ?? false,
   updated_at: data.updated_at ?? null,
@@ -55,7 +55,7 @@ export function createFirestoreStore({
       try {
         const ref = shows(owner).doc(String(contentId));
         // A transaction, not a plain set({merge:true}): applyPatch needs the
-        // current value to decide listened_at, and a read-then-write without
+        // current value to decide good_at, and a read-then-write without
         // one can lose a concurrent field update.
         const run = db.runTransaction(async tx => {
           const doc = await tx.get(ref);

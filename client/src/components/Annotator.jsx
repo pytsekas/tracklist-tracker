@@ -2,33 +2,38 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 
 const EMPTY = {
-  listened: false, listened_at: null, notes: null, want_to_listen: false, updated_at: null,
+  good: false, good_at: null, notes: null, want_to_listen: false, updated_at: null,
 };
 
 /**
- * Editor for one show's annotation.
+ * Editor for one show's annotation: "Kuulata" (want to listen), "Päris hea"
+ * (good) and, once a show is good, the "Kommentaar" box that says why.
  *
- * Every control saves its own field, which is why the API is PATCH: the notes
- * box saves on a debounce, so a whole-document write could land after a
- * checkbox click and silently revert it.
+ * Every control saves its own field, which is why the API is PATCH: the
+ * comment box saves on a debounce, so a whole-document write could land after
+ * a button click and silently revert it.
  */
-export default function Annotator({ contentId, annotation, onChange }) {
+export default function Annotator({ contentId, annotation, onChange, title }) {
   const [value, setValue] = useState(annotation ?? EMPTY);
   const [notes, setNotes] = useState(annotation?.notes ?? '');
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const timer = useRef(null);
-  // The debounced notes text not yet sent, so unmounting mid-debounce can
+  // The debounced comment text not yet sent, so unmounting mid-debounce can
   // flush it instead of silently dropping it (see the unmount effect below).
   // Kept in a ref, not read from state/props, because the effect that flushes
   // it is mount-once and would otherwise only ever see the first render's
   // values.
   const pending = useRef(null);
   // Guards against out-of-order PATCH responses: two rapid saves (e.g. the
-  // listened checkbox right after the want-to-listen one) can resolve in the
-  // opposite order they were sent in, and without this the earlier-sent
-  // response would land last and revert the later change.
+  // Päris hea button right after the Kuulata one) can resolve in the opposite
+  // order they were sent in, and without this the earlier-sent response would
+  // land last and revert the later change.
   const seq = useRef(0);
+
+  // Accessible names carry the show title when the caller gives one, so two
+  // shows' controls never read the same to a screen reader.
+  const label = name => (title ? `${name}: ${title}` : name);
 
   useEffect(() => {
     setValue(annotation ?? EMPTY);
@@ -54,7 +59,7 @@ export default function Annotator({ contentId, annotation, onChange }) {
       setError(err.message);
     } finally {
       // A stale save finishing after a newer one must not turn off the
-      // "Saving…" indicator while that newer save is still in flight.
+      // "Salvestan…" indicator while that newer save is still in flight.
       if (mine === seq.current) setSaving(false);
     }
     // Residual: if the server itself processes two concurrent writes in the
@@ -77,7 +82,7 @@ export default function Annotator({ contentId, annotation, onChange }) {
 
   useEffect(() => () => {
     clearTimeout(timer.current);
-    // Flush a debounced note that hasn't fired yet rather than discarding
+    // Flush a debounced comment that hasn't fired yet rather than discarding
     // it — this runs on unmount (e.g. navigating to another show before the
     // 600ms debounce elapses), so the component is already gone: call the
     // API directly, not save(), and never touch state here.
@@ -89,27 +94,34 @@ export default function Annotator({ contentId, annotation, onChange }) {
   return (
     <section className="annotator">
       <div className="annotator-row">
-        <label className="toggle">
-          <input type="checkbox" checked={value.listened}
-                 onChange={e => save({ listened: e.target.checked })} />
-          Listened
-        </label>
+        <button type="button" className={value.want_to_listen ? 'fav on' : 'fav'}
+                aria-pressed={value.want_to_listen} disabled={saving}
+                aria-label={label('Kuulata')}
+                onClick={() => save({ want_to_listen: !value.want_to_listen })}>
+          Kuulata
+        </button>
 
-        <label className="toggle">
-          <input type="checkbox" checked={value.want_to_listen}
-                 onChange={e => save({ want_to_listen: e.target.checked })} />
-          Want to listen
-        </label>
+        <button type="button" className={value.good ? 'fav on' : 'fav'}
+                aria-pressed={value.good} disabled={saving}
+                aria-label={label('Päris hea')}
+                onClick={() => save({ good: !value.good })}>
+          Päris hea
+        </button>
 
         <span className="annotator-state">
-          {saving ? 'Saving…' : error ? <span className="err">{error}</span> : null}
+          {saving ? 'Salvestan…' : error ? <span className="err">{error}</span> : null}
         </span>
       </div>
 
-      <textarea className="notes" rows={3} value={notes}
-                placeholder="Notes about this episode…"
-                aria-label="Notes about this episode"
-                onChange={e => onNotes(e.target.value)} />
+      {/* The comment belongs to "Päris hea": it says why the show was good, so
+          the box only appears once the show is marked. A comment typed earlier
+          is kept on the server and comes back when the flag is set again. */}
+      {value.good && (
+        <textarea className="notes" rows={3} value={notes}
+                  placeholder="Miks see saade hea oli…"
+                  aria-label={label('Kommentaar')}
+                  onChange={e => onNotes(e.target.value)} />
+      )}
     </section>
   );
 }

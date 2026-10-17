@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 
 /**
- * Add-or-remove toggle for one show, song, artist or album. Keeps the entry
- * id locally after a save, so the page it sits on never has to refetch.
+ * The "Põnev" toggle: adds a song, artist or album to the favourites list or
+ * removes it. Keeps the entry id locally after a save, so the page it sits on
+ * never has to refetch.
  *
  * `add` is the POST body for this thing; `name` is what to call it in the
  * accessible label.
@@ -41,9 +42,9 @@ export default function FavouriteButton({ favouriteId, add, name }) {
     <span className="fav-wrap">
       <button type="button" className={on ? 'fav on' : 'fav'} disabled={saving}
               aria-pressed={on}
-              aria-label={on ? `Remove ${name} from favourites` : `Add ${name} to favourites`}
+              aria-label={on ? `Eemalda põnevate hulgast: ${name}` : `Lisa põnevate hulka: ${name}`}
               onClick={toggle}>
-        {on ? '★ Favourited' : '☆ Favourite'}
+        {on ? '✓ Põnev' : 'Põnev'}
       </button>
       {error && <span className="err fav-err">{error}</span>}
     </span>

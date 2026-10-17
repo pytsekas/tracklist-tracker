@@ -57,10 +57,10 @@ test('GET /api/me reports the signed-in user', async () => {
 });
 
 test('PATCH creates an annotation and returns it', async () => {
-  const { status, body } = await patch(`/api/shows/${SHOW}/annotation`, { listened: true });
+  const { status, body } = await patch(`/api/shows/${SHOW}/annotation`, { good: true });
   assert.equal(status, 200);
-  assert.equal(body.listened, true);
-  assert.match(body.listened_at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(body.good, true);
+  assert.match(body.good_at, /^\d{4}-\d{2}-\d{2}T/);
 });
 
 test('a second PATCH changes only the keys it names', async () => {
@@ -68,7 +68,7 @@ test('a second PATCH changes only the keys it names', async () => {
   const { body } = await patch(`/api/shows/${SHOW}/annotation`, { notes: 'hea saade' });
   assert.equal(body.notes, 'hea saade');
   assert.equal(body.want_to_listen, true, 'the queue flag survives a notes-only patch');
-  assert.equal(body.listened, true, 'listened survives too');
+  assert.equal(body.good, true, 'good survives too');
 });
 
 test('the write is visible to the read routes immediately', async () => {
@@ -89,6 +89,12 @@ test('PATCH rejects rating as an unknown field with 400', async () => {
   const { status, body } = await patch(`/api/shows/${SHOW}/annotation`, { rating: 4 });
   assert.equal(status, 400);
   assert.match(body.error, /unknown field: rating/);
+});
+
+test('PATCH rejects listened as an unknown field with 400', async () => {
+  const { status, body } = await patch(`/api/shows/${SHOW}/annotation`, { listened: true });
+  assert.equal(status, 400);
+  assert.match(body.error, /unknown field: listened/);
 });
 
 test('GET /api/tags is gone', async () => {
@@ -118,17 +124,17 @@ test('PATCH rejects over-long notes with 400', async () => {
 });
 
 test('PATCH on a content_id not in the archive is 404', async () => {
-  const { status } = await patch('/api/shows/9999999999/annotation', { listened: true });
+  const { status } = await patch('/api/shows/9999999999/annotation', { good: true });
   assert.equal(status, 404);
 });
 
 test('PATCH on a non-numeric content_id is 400', async () => {
-  const { status } = await patch('/api/shows/abc/annotation', { listened: true });
+  const { status } = await patch('/api/shows/abc/annotation', { good: true });
   assert.equal(status, 400);
 });
 
 test('DELETE removes the annotation from store and temp table', async () => {
-  await patch(`/api/shows/${SHOW}/annotation`, { listened: true });
+  await patch(`/api/shows/${SHOW}/annotation`, { good: true });
   const { status } = await send('DELETE', `/api/shows/${SHOW}/annotation`);
   assert.equal(status, 204);
 

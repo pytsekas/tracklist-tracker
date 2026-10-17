@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, fmtDate, fmtNum } from '../api.js';
+import { api, fmtDate, fmtCount } from '../api.js';
 import { useAsync } from '../components/useAsync.js';
 import { StateBadge } from './SeriesShows.jsx';
 
 const VIEWS = [
-  { key: 'want',     label: 'Queue',        params: { want: 'true' } },
-  { key: 'listened', label: 'Listened',     params: { listened: 'true' } },
+  { key: 'want', label: 'Kuulata',   params: { want: 'true' } },
+  { key: 'good', label: 'Päris hea', params: { good: 'true' } },
 ];
 
 // The server caps pageSize at 500 (server/src/routes.js `size()`), and the
@@ -28,12 +28,13 @@ async function fetchAllShows(slug, params) {
   return rows;
 }
 
+/** The "Minu" page: the shows to listen to, and the good ones with their comments. */
 export default function Mine() {
   const [view, setView] = useState('want');
 
   const params = VIEWS.find(v => v.key === view).params;
 
-  // Every series at once: the queue is not a per-series idea.
+  // Every series at once: these lists are not a per-series idea.
   const series = useAsync(() => api.series(), []);
   const shows = useAsync(
     async () => {
@@ -46,17 +47,17 @@ export default function Mine() {
     [series.data, view]);
 
   if (series.error) return <p className="err">{series.error.message}</p>;
-  if (shows.loading || series.loading) return <p className="empty">Loading…</p>;
+  if (shows.loading || series.loading) return <p className="empty">Laadin…</p>;
   if (shows.error) return <p className="err">{shows.error.message}</p>;
 
   const rows = shows.data ?? [];
 
   return (
     <>
-      <h1>Mine</h1>
-      <p className="sub">{fmtNum(rows.length)} shows</p>
+      <h1>Minu</h1>
+      <p className="sub">{fmtCount(rows.length, 'saade', 'saadet')}</p>
 
-      <div className="filters" role="group" aria-label="View">
+      <div className="filters" role="group" aria-label="Vaade">
         {VIEWS.map(v => (
           <button key={v.key} type="button"
                   className={v.key === view ? 'chip on' : 'chip'}
@@ -67,12 +68,12 @@ export default function Mine() {
 
       {rows.length === 0 ? (
         <p className="empty">
-          Nothing here yet. Open a show and mark it to start building this list.
+          Siin pole veel midagi. Ava saade ja märgi see, et nimekiri tekiks.
         </p>
       ) : (
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Date</th><th>Series</th><th>Title</th></tr></thead>
+            <thead><tr><th>Kuupäev</th><th>Sari</th><th>Pealkiri</th></tr></thead>
             <tbody>
               {rows.map(r => (
                 <tr key={r.id}>
@@ -81,6 +82,10 @@ export default function Mine() {
                   <td>
                     <Link to={`/shows/${r.id}`}>{r.title}</Link>
                     <StateBadge annotation={r.annotation} favouriteId={r.favourite_id} />
+                    {/* The comment is why the show was good; it only makes sense here. */}
+                    {view === 'good' && r.annotation?.notes && (
+                      <span className="sub-line">{r.annotation.notes}</span>
+                    )}
                   </td>
                 </tr>
               ))}

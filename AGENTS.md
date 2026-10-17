@@ -10,8 +10,8 @@ README, then this file. Fix whichever one is stale.
 A single-user web app for browsing scraped ERR (Estonian public radio)
 tracklists: series, shows (episodes), tracks, with artists cross-referenced.
 The archive is a read-only SQLite file committed to the repo and baked into the
-container image. On top of it sits a personal annotation layer (listened,
-notes, queue) stored in Firestore in production and in a local
+container image. On top of it sits a personal annotation layer (a "pretty
+good" flag with a comment, and a queue) stored in Firestore in production and in a local
 SQLite file in development, and a favourites list of shows, songs, artists and
 albums. It deploys to Cloud Run behind Identity-Aware Proxy
 with one allowlisted Google account.
@@ -46,8 +46,9 @@ client/src/
   main.jsx, App.jsx       React 18 + React Router 6; the route table is in App.jsx
   api.js                  the only fetch wrapper, plus fmtDate / fmtNum
   lookup.js               lookupLinks(entry): Spotify, Discogs, Bandcamp and MusicBrainz links
-  pages/                  one file per route (Favourites.jsx is the favourites list)
-  components/             Annotator (per-field PATCH editor), FavouriteButton, AddAlbum, Pager, useAsync
+  pages/                  one file per route (Mine.jsx is the Minu page, Favourites.jsx the Põnev list)
+  components/             Annotator (Kuulata / Päris hea / Kommentaar editor), FavouriteButton (the
+                          Põnev toggle), AddAlbum, Pager, useAsync
   styles.css              plain CSS with custom properties on :root; no CSS framework
 data/
   tracklists.sqlite       the committed archive (about 4.4 MB); copied into the image as-is
@@ -77,7 +78,7 @@ Node 22 or newer. Run everything from the repo root.
 There is no lint or format step. Match the surrounding code (see Conventions).
 
 Run `npm test` before claiming anything works. At the time of writing the
-suite is 211 tests: 209 pass and 2 are skipped (the live Firestore contract
+suite is 215 tests: 213 pass and 2 are skipped (the live Firestore contract
 tests, which need FIRESTORE_TEST_PROJECT). A few `console.warn` lines from
 auth.js during the run are expected output from the failure-path tests.
 
@@ -147,8 +148,9 @@ production wrong.
   handler in routes.js, the deadline in firestore.js, requireOwner in
   index.js). When you change the code under one, update or delete it.
 - Client pages fetch through `api` in api.js and `useAsync`. No state library.
-  Every interactive control has an accessible name. UI text is English; dates
-  render as dd.mm.yyyy and numbers use the et-EE locale.
+  Every interactive control has an accessible name. UI text is Estonian (the
+  brand name, route paths and API messages stay English); dates render as
+  dd.mm.yyyy and numbers use the et-EE locale.
 - Client styling uses the custom properties on `:root` in styles.css: white
   background, #1a1a1a ink, #6b7280 muted, #f5f7fa panels, #2e6fdb accent with
   #1f4fa0 hover, Inter, 6px radius. Blue is for links and buttons only.

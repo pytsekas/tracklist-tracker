@@ -72,33 +72,34 @@ test('an unfiltered request is unchanged by the join', async () => {
   assert.ok(body.rows.every(r => r.annotation === null));
 });
 
-test('?listened=false includes shows with no annotation at all', async () => {
+test('?good=true returns only good shows', async () => {
   await reset();
-  const { body } = await get('/api/series/testshow/shows?listened=false');
-  assert.equal(body.total, 3, 'an unannotated show is unlistened, not unknown');
-});
-
-test('?listened=false excludes shows marked listened', async () => {
-  await reset();
-  await patch('/api/shows/1610000001/annotation', { listened: true });
-  const { body } = await get('/api/series/testshow/shows?listened=false');
-  assert.equal(body.total, 2, 'total reflects the filter, not the whole series');
-  assert.ok(!body.rows.some(r => r.content_id === 1610000001));
-});
-
-test('?listened=true returns only listened shows', async () => {
-  await reset();
-  await patch('/api/shows/1610000001/annotation', { listened: true });
-  const { body } = await get('/api/series/testshow/shows?listened=true');
+  await patch('/api/shows/1610000001/annotation', { good: true });
+  const { body } = await get('/api/series/testshow/shows?good=true');
   assert.deepEqual(body.rows.map(r => r.content_id), [1610000001]);
-  assert.equal(body.total, 1);
+  assert.equal(body.total, 1, 'total reflects the filter, not the whole series');
 });
 
-test('a show annotated but not listened still counts as unlistened', async () => {
+test('?good=true excludes a show that is annotated but not good', async () => {
   await reset();
   await patch('/api/shows/1610000001/annotation', { notes: 'hea' });
-  const { body } = await get('/api/series/testshow/shows?listened=false');
-  assert.equal(body.total, 3, 'a note does not mark a show listened');
+  const { body } = await get('/api/series/testshow/shows?good=true');
+  assert.equal(body.total, 0, 'a note alone does not make a show good');
+});
+
+test('?good=true excludes a show whose good flag was switched off again', async () => {
+  await reset();
+  await patch('/api/shows/1610000001/annotation', { good: true });
+  await patch('/api/shows/1610000001/annotation', { good: false });
+  const { body } = await get('/api/series/testshow/shows?good=true');
+  assert.equal(body.total, 0);
+});
+
+test('?listened= is no longer recognised and does not filter', async () => {
+  await reset();
+  const { status, body } = await get('/api/series/testshow/shows?listened=true');
+  assert.equal(status, 200);
+  assert.equal(body.total, 3);
 });
 
 test('?want=true returns only the queue', async () => {
@@ -110,17 +111,18 @@ test('?want=true returns only the queue', async () => {
 
 test('filters combine', async () => {
   await reset();
-  await patch('/api/shows/1610000001/annotation', { listened: true, want_to_listen: true });
-  await patch('/api/shows/1610000002/annotation', { listened: true });
-  const { body } = await get('/api/series/testshow/shows?listened=true&want=true');
+  await patch('/api/shows/1610000001/annotation', { good: true, want_to_listen: true });
+  await patch('/api/shows/1610000002/annotation', { good: true });
+  const { body } = await get('/api/series/testshow/shows?good=true&want=true');
   assert.equal(body.total, 1);
   assert.deepEqual(body.rows.map(r => r.content_id), [1610000001]);
 });
 
 test('paging applies after filtering, not before', async () => {
   await reset();
-  await patch('/api/shows/1610000001/annotation', { listened: true });
-  const { body } = await get('/api/series/testshow/shows?listened=false&page=1&pageSize=1');
+  await patch('/api/shows/1610000001/annotation', { good: true });
+  await patch('/api/shows/1610000002/annotation', { good: true });
+  const { body } = await get('/api/series/testshow/shows?good=true&page=1&pageSize=1');
   assert.equal(body.total, 2);
   assert.equal(body.rows.length, 1, 'a filtered page is a full page, not a short one');
 });

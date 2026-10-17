@@ -48,10 +48,10 @@ export async function createStore(env = process.env) {
  * own columns; see ANNOTATION_COLUMNS in temp-table.js.
  */
 export function annotationOf(row) {
-  if (row.ann_listened === null || row.ann_listened === undefined) return null;
+  if (row.ann_good === null || row.ann_good === undefined) return null;
   return {
-    listened: !!row.ann_listened,
-    listened_at: row.ann_listened_at,
+    good: !!row.ann_good,
+    good_at: row.ann_good_at,
     notes: row.ann_notes,
     want_to_listen: !!row.ann_want_to_listen,
     updated_at: row.ann_updated_at,

@@ -19,29 +19,30 @@ export default function Artists() {
 
   return (
     <>
-      <h1>Artists</h1>
-      <p className="sub">Ranked by how often they were played.</p>
+      <h1>Esitajad</h1>
+      <p className="sub">Järjestatud esituste arvu järgi.</p>
 
       <div className="controls">
-        <input type="search" placeholder="Artist name…" value={input}
+        <input type="search" placeholder="Esitaja nimi…" value={input}
+               aria-label="Otsi esitajaid"
                onChange={e => setInput(e.target.value)} />
       </div>
 
       {error && <p className="err">{error.message}</p>}
-      {loading && <p className="empty">Loading…</p>}
+      {loading && <p className="empty">Laadin…</p>}
 
       {data && (
         <>
           <div className="table-scroll">
             <table>
-              <thead><tr><th>Artist</th><th className="num">Plays</th><th className="num">Series</th></tr></thead>
+              <thead><tr><th>Esitaja</th><th className="num">Esitusi</th><th className="num">Sarju</th></tr></thead>
               <tbody>
                 {data.rows.map(r => (
                   <tr key={r.id}>
                     <td><Link to={`/artists/${r.id}`}>{r.name}</Link>
                       {r.favourite_id && (
                         <span className="badges">
-                          <span className="badge" title="In favourites" aria-label="In favourites">★</span>
+                          <span className="badge" title="Põnev" aria-label="Põnev">★</span>
                         </span>
                       )}
                     </td>
@@ -52,7 +53,7 @@ export default function Artists() {
               </tbody>
             </table>
           </div>
-          {data.rows.length === 0 && <p className="empty">No matches.</p>}
+          {data.rows.length === 0 && <p className="empty">Vasteid ei ole.</p>}
           <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />
         </>
       )}

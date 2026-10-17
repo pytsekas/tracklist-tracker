@@ -5,7 +5,7 @@ Data lives in five places, and they are deliberately kept apart:
 | Store | What it holds | Where | Written by |
 | --- | --- | --- | --- |
 | **The archive** | series, shows, tracks, artists, broadcasters | `data/tracklists.sqlite`, committed, copied into the image | `npm run build:db` only; read-only at runtime |
-| **The annotation store** | one person's listened / notes / want-to-listen per show | Firestore in production, `data/annotations.sqlite` locally | the API, on every annotation write |
+| **The annotation store** | one person's good / notes / want-to-listen per show | Firestore in production, `data/annotations.sqlite` locally | the API, on every annotation write |
 | **The annotation temp table** | a copy of the owner's annotations for joining | a `TEMP TABLE` on the archive connection, in process | loaded at boot, updated after each successful store write |
 | **The favourites store** | one person's list of shows, songs, artists and albums to follow up on | Firestore in production, the same `data/annotations.sqlite` locally | the API, on every favourites write |
 | **The favourites cache** | a copy of the owner's favourites for reads and membership | a `Map` in process | loaded at boot, updated after each successful store write |
@@ -343,9 +343,9 @@ One object per annotated show, identical in every store. Defined in
 
 | Field | Type | Rule |
 | --- | --- | --- |
-| `listened` | boolean | |
-| `listened_at` | ISO timestamp or null | set to now by every write that includes `listened: true`, cleared by every write that includes `listened: false`; never set by the client |
-| `notes` | string or null | at most 4,000 characters; an empty or whitespace-only string is stored as null |
+| `good` | boolean | the "pretty good" flag |
+| `good_at` | ISO timestamp or null | set to now by every write that includes `good: true`, cleared by every write that includes `good: false`; never set by the client |
+| `notes` | string or null | the comment on why a show was good; at most 4,000 characters; an empty or whitespace-only string is stored as null |
 | `want_to_listen` | boolean | the queue |
 | `updated_at` | ISO timestamp | set on every write |
 
@@ -366,9 +366,13 @@ annotations/{owner email}/shows/{content_id}
 ```
 
 One document per **annotated** show, never one per show: a cold start reads
-only what has been marked. The document holds exactly the seven fields above;
-absent fields read back as the defaults. Document ids are strings, so the
-integer `content_id` is converted at the driver boundary and nowhere else.
+only what has been marked. The document holds the five fields above; absent
+fields read back as the defaults. A document written before a field was
+removed (`listened`, `listened_at`, `rating`, `tags`) still carries it: the
+driver never reads those fields, and the next write to that show erases them,
+because the transaction writes the whole document rather than merging.
+Document ids are strings, so the integer `content_id` is converted at the
+driver boundary and nowhere else.
 
 A merge runs in a Firestore transaction (read, apply the patch, write) so two
 rapid partial updates cannot lose each other's fields. Every call is raced
@@ -392,8 +396,8 @@ overrides), gitignored, in WAL mode, entirely separate from the archive.
 CREATE TABLE annotations (
   owner          TEXT    NOT NULL,
   content_id     INTEGER NOT NULL,
-  listened       INTEGER NOT NULL DEFAULT 0,
-  listened_at    TEXT,
+  good           INTEGER NOT NULL DEFAULT 0,
+  good_at        TEXT,
   notes          TEXT,
   want_to_listen INTEGER NOT NULL DEFAULT 0,
   updated_at     TEXT    NOT NULL,
@@ -402,7 +406,10 @@ CREATE TABLE annotations (
 ```
 
 Booleans are 0/1. `npm test` and `npm run dev` use
-this driver, so neither needs a cloud project or an emulator.
+this driver, so neither needs a cloud project or an emulator. A file created
+before the `good` flag gains the `good` and `good_at` columns on open through a
+guarded `ALTER TABLE`; the dropped `rating`, `tags`, `listened` and
+`listened_at` columns stay where they are and are never written.
 
 Both drivers wrap every failure in `unavailable()`, which the error handler
 turns into a 502 rather than a 500: the store being unreachable is not a bug
@@ -418,8 +425,8 @@ read-only connection and loads the owner's annotations into it:
 ```sql
 CREATE TEMP TABLE IF NOT EXISTS annotations (
   content_id     INTEGER PRIMARY KEY,
-  listened       INTEGER NOT NULL DEFAULT 0,
-  listened_at    TEXT,
+  good           INTEGER NOT NULL DEFAULT 0,
+  good_at        TEXT,
   notes          TEXT,
   want_to_listen INTEGER NOT NULL DEFAULT 0,
   updated_at     TEXT    NOT NULL

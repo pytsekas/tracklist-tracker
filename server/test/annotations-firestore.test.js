@@ -15,8 +15,8 @@ test('the Firestore driver satisfies the store contract', { skip }, async () => 
   try {
     assert.equal(await store.get(OWNER, SHOW), null);
 
-    const first = await store.merge(OWNER, SHOW, { listened: true, want_to_listen: true });
-    assert.equal(first.listened, true);
+    const first = await store.merge(OWNER, SHOW, { good: true, want_to_listen: true });
+    assert.equal(first.good, true);
     assert.equal(first.want_to_listen, true);
 
     const second = await store.merge(OWNER, SHOW, { notes: 'hea' });
@@ -58,7 +58,7 @@ test('a failing client surfaces as ANNOTATION_STORE_UNAVAILABLE', async () => {
     runTransaction() { throw new Error('offline'); },
   };
   await assert.rejects(
-    () => createFirestoreStore({ projectId: 'p', client: mergeFails }).merge(OWNER, SHOW, { listened: true }),
+    () => createFirestoreStore({ projectId: 'p', client: mergeFails }).merge(OWNER, SHOW, { good: true }),
     err => err.code === 'ANNOTATION_STORE_UNAVAILABLE',
     'merge()');
 });
