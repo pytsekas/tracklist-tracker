@@ -15,11 +15,11 @@ export default function App() {
         <div className="wrap">
           <span className="brand">Tracklist browser</span>
           <nav>
-            <NavLink to="/" end>Series</NavLink>
-            <NavLink to="/tracks">Tracks</NavLink>
-            <NavLink to="/artists">Artists</NavLink>
-            <NavLink to="/mine">Mine</NavLink>
-            <NavLink to="/favourites">Favourites</NavLink>
+            <NavLink to="/" end>Sarjad</NavLink>
+            <NavLink to="/tracks">Lood</NavLink>
+            <NavLink to="/artists">Esitajad</NavLink>
+            <NavLink to="/mine">Minu</NavLink>
+            <NavLink to="/favourites">Põnev</NavLink>
           </nav>
         </div>
       </header>
@@ -33,7 +33,7 @@ export default function App() {
           <Route path="/artists/:id" element={<Artist />} />
           <Route path="/mine" element={<Mine />} />
           <Route path="/favourites" element={<Favourites />} />
-          <Route path="*" element={<p className="empty">Not found.</p>} />
+          <Route path="*" element={<p className="empty">Lehte ei leitud.</p>} />
         </Routes>
       </main>
     </>

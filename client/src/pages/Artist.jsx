@@ -8,7 +8,7 @@ export default function Artist() {
   const { id } = useParams();
   const { data, error, loading } = useAsync(() => api.artist(id), [id]);
 
-  if (loading) return <p className="empty">Loading…</p>;
+  if (loading) return <p className="empty">Laadin…</p>;
   if (error) return <p className="err">{error.message}</p>;
 
   const { artist, tracks } = data;
@@ -17,7 +17,7 @@ export default function Artist() {
   return (
     <>
       <h1>{artist.name}</h1>
-      <p className="sub">{fmtNum(tracks.length)} plays · {fmtNum(distinct)} distinct tracks</p>
+      <p className="sub">{fmtNum(tracks.length)} esitust · {fmtNum(distinct)} eri lugu</p>
       <div className="annotator-row">
         <FavouriteButton favouriteId={artist.favourite_id}
                          add={{ kind: 'artist', artist_id: artist.id }}
@@ -26,7 +26,7 @@ export default function Artist() {
       </div>
       <div className="table-scroll">
         <table>
-          <thead><tr><th>Title</th><th>Series</th><th>Show</th><th>Date</th></tr></thead>
+          <thead><tr><th>Pealkiri</th><th>Sari</th><th>Saade</th><th>Kuupäev</th></tr></thead>
           <tbody>
             {tracks.map(t => (
               <tr key={t.id}>

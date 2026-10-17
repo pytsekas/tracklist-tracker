@@ -3,8 +3,8 @@ import { api } from '../api.js';
 
 /**
  * The one free-text way into favourites: an album the archive knows nothing
- * about. With `artist` given (the Artist page) only the title is typed;
- * without it (the Favourites page) both fields are.
+ * about. With `artist` given (the artist page) only the title is typed;
+ * without it (the Põnev page) both fields are.
  */
 export default function AddAlbum({ artist: fixedArtist = null, onAdded }) {
   const [artist, setArtist] = useState('');
@@ -40,20 +40,20 @@ export default function AddAlbum({ artist: fixedArtist = null, onAdded }) {
 
   return (
     <form className="controls" onSubmit={submit}
-          aria-label={fixedArtist ? `Add an album by ${fixedArtist}` : 'Add an album'}>
+          aria-label={fixedArtist ? `Lisa albumi esitajalt ${fixedArtist}` : 'Lisa album'}>
       {!fixedArtist && (
-        <input type="text" value={artist} placeholder="Artist" aria-label="Artist"
+        <input type="text" value={artist} placeholder="Esitaja" aria-label="Esitaja"
                onChange={e => setArtist(e.target.value)} />
       )}
       <input type="text" value={title}
-             placeholder={fixedArtist ? `Album by ${fixedArtist}` : 'Album'}
-             aria-label={fixedArtist ? 'Album title' : 'Album'}
+             placeholder={fixedArtist ? `${fixedArtist} album` : 'Album'}
+             aria-label={fixedArtist ? 'Albumi pealkiri' : 'Album'}
              onChange={e => setTitle(e.target.value)} />
       <button type="submit" disabled={busy || !artistValue.trim() || !title.trim()}>
-        {fixedArtist ? 'Add' : 'Add album'}
+        {fixedArtist ? 'Lisa' : 'Lisa album'}
       </button>
       <span className="annotator-state">
-        {added ? 'Added' : error ? <span className="err">{error}</span> : null}
+        {added ? 'Lisatud' : error ? <span className="err">{error}</span> : null}
       </span>
     </form>
   );

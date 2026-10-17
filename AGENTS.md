@@ -46,8 +46,9 @@ client/src/
   main.jsx, App.jsx       React 18 + React Router 6; the route table is in App.jsx
   api.js                  the only fetch wrapper, plus fmtDate / fmtNum
   lookup.js               lookupLinks(entry): Spotify, Discogs, Bandcamp and MusicBrainz links
-  pages/                  one file per route (Favourites.jsx is the favourites list)
-  components/             Annotator (per-field PATCH editor), FavouriteButton, AddAlbum, Pager, useAsync
+  pages/                  one file per route (Mine.jsx is the Minu page, Favourites.jsx the Põnev list)
+  components/             Annotator (Kuulata / Päris hea / Kommentaar editor), FavouriteButton (the
+                          Põnev toggle), AddAlbum, Pager, useAsync
   styles.css              plain CSS with custom properties on :root; no CSS framework
 data/
   tracklists.sqlite       the committed archive (about 4.4 MB); copied into the image as-is
@@ -147,8 +148,9 @@ production wrong.
   handler in routes.js, the deadline in firestore.js, requireOwner in
   index.js). When you change the code under one, update or delete it.
 - Client pages fetch through `api` in api.js and `useAsync`. No state library.
-  Every interactive control has an accessible name. UI text is English; dates
-  render as dd.mm.yyyy and numbers use the et-EE locale.
+  Every interactive control has an accessible name. UI text is Estonian (the
+  brand name, route paths and API messages stay English); dates render as
+  dd.mm.yyyy and numbers use the et-EE locale.
 - Client styling uses the custom properties on `:root` in styles.css: white
   background, #1a1a1a ink, #6b7280 muted, #f5f7fa panels, #2e6fdb accent with
   #1f4fa0 hover, Inter, 6px radius. Blue is for links and buttons only.

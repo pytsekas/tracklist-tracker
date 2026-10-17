@@ -23,46 +23,46 @@ export default function Tracks() {
 
   return (
     <>
-      <h1>Tracks</h1>
-      <p className="sub">Search across every imported show by artist or title.</p>
+      <h1>Lood</h1>
+      <p className="sub">Otsi kõigist imporditud saadetest esitaja või pealkirja järgi.</p>
 
       <div className="controls">
-        <input type="search" placeholder="Artist or title…" value={input}
+        <input type="search" placeholder="Esitaja või pealkiri…" value={input}
                onChange={e => setInput(e.target.value)} />
         <select value={series} onChange={e => { setSeries(e.target.value); setPage(1); }}>
-          <option value="">All series</option>
+          <option value="">Kõik sarjad</option>
           {(list.data || []).map(s => <option key={s.slug} value={s.slug}>{s.name}</option>)}
         </select>
       </div>
 
       {error && <p className="err">{error.message}</p>}
-      {loading && <p className="empty">Loading…</p>}
+      {loading && <p className="empty">Laadin…</p>}
 
       {data && (
         <>
           <div className="table-scroll">
             <table>
-              <thead><tr><th>Artist</th><th>Title</th><th>Series</th><th>Date</th><th></th></tr></thead>
+              <thead><tr><th>Esitaja</th><th>Pealkiri</th><th>Sari</th><th>Kuupäev</th><th></th></tr></thead>
               <tbody>
                 {data.rows.map(r => (
                   <tr key={r.id}>
                     <td>{r.artist_id
                       ? <Link to={`/artists/${r.artist_id}`}>{r.artist}</Link>
-                      : <span style={{ color: 'var(--muted)' }}>unknown</span>}</td>
+                      : <span style={{ color: 'var(--muted)' }}>teadmata</span>}</td>
                     <td><Link to={`/shows/${r.show_id}`}>{r.title}</Link></td>
                     <td>{r.series_name}</td>
                     <td className="date">{fmtDate(r.show_date)}</td>
                     <td>
                       <FavouriteButton favouriteId={r.favourite_id}
                                        add={{ kind: 'song', track_id: r.id }}
-                                       name={`${r.artist ?? 'unknown'} – ${r.title}`} />
+                                       name={`${r.artist ?? 'teadmata'} – ${r.title}`} />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          {data.rows.length === 0 && <p className="empty">No matches.</p>}
+          {data.rows.length === 0 && <p className="empty">Vasteid ei ole.</p>}
           <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />
         </>
       )}

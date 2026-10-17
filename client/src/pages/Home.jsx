@@ -6,35 +6,34 @@ export default function Home() {
   const stats = useAsync(() => api.stats(), []);
   const series = useAsync(() => api.series(), []);
 
-  if (series.loading) return <p className="empty">Loading…</p>;
+  if (series.loading) return <p className="empty">Laadin…</p>;
   if (series.error) return <p className="err">{series.error.message}</p>;
 
   const s = stats.data;
   return (
     <>
-      <h1>Series</h1>
-      <p className="sub">Radio shows imported from the ERR tracklist scrapes.</p>
+      <h1>Sarjad</h1>
+      <p className="sub">ERR-i saatelugude nimekirjadest imporditud raadiosaated.</p>
 
       {s && (
         <div className="stats">
-          <div className="stat"><div className="n">{fmtNum(s.series)}</div><div className="l">series</div></div>
-          <div className="stat"><div className="n">{fmtNum(s.shows)}</div><div className="l">shows</div></div>
-          <div className="stat"><div className="n">{fmtNum(s.tracks)}</div><div className="l">tracks</div></div>
-          <div className="stat"><div className="n">{fmtNum(s.artists)}</div><div className="l">artists</div></div>
+          <div className="stat"><div className="n">{fmtNum(s.series)}</div><div className="l">sarja</div></div>
+          <div className="stat"><div className="n">{fmtNum(s.shows)}</div><div className="l">saadet</div></div>
+          <div className="stat"><div className="n">{fmtNum(s.tracks)}</div><div className="l">lugu</div></div>
+          <div className="stat"><div className="n">{fmtNum(s.artists)}</div><div className="l">esitajat</div></div>
         </div>
       )}
 
       {series.data.length === 0 ? (
         <p className="empty">
-          No tracklists loaded. The archive is built from the CSV files in{' '}
-          <code>data/csv/</code> when the app is built — see the README if you are
-          running this locally.
+          Lugude nimekirju pole laaditud. Arhiiv ehitatakse rakenduse ehitamisel{' '}
+          <code>data/csv/</code> CSV-failidest; kohapeal käivitades vaata README-d.
         </p>
       ) : (
         <div className="table-scroll">
           <table>
             <thead>
-              <tr><th>Series</th><th className="num">Shows</th><th className="num">Tracks</th><th>First</th><th>Last</th></tr>
+              <tr><th>Sari</th><th className="num">Saateid</th><th className="num">Lugusid</th><th>Esimene</th><th>Viimane</th></tr>
             </thead>
             <tbody>
               {series.data.map(r => (

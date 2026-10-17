@@ -5,38 +5,38 @@ import { useAsync } from '../components/useAsync.js';
 import Pager from '../components/Pager.jsx';
 
 /**
- * Compact state for one show: nothing at all when it has no annotation.
- * Each symbol carries `aria-label` alongside `title` — `title` alone is not
- * reliably announced by screen readers, and a bare glyph like "✓" or "☆"
- * would otherwise convey nothing to them.
+ * Compact state for one show: nothing at all when it is on no list.
+ * Each badge carries `aria-label` alongside `title` — `title` alone is not
+ * reliably announced by screen readers, and a bare glyph like "★" would
+ * otherwise convey nothing to them.
  */
 export function StateBadge({ annotation: a, favouriteId = null }) {
-  // A row can exist with every field falsy -- ticking "Listened" and then
-  // unticking it leaves an annotation record behind, since there is no
+  // A row can exist with every field falsy -- pressing "Kuulata" and then
+  // pressing it again leaves an annotation record behind, since there is no
   // "clear" action that removes it. Without this check that row would render
   // an empty <span className="badges">, whose margin-left shows up as an
   // unexplained gap that never goes away.
-  const hasState = favouriteId || (a && (a.listened || a.want_to_listen || a.notes));
+  const hasState = favouriteId || (a && (a.want_to_listen || a.good));
   if (!hasState) return null;
   return (
     <span className="badges">
-      {a?.listened && <span className="badge" title="Listened" aria-label="Listened">✓</span>}
       {a?.want_to_listen && (
-        <span className="badge" title="Want to listen" aria-label="Want to listen">☆</span>
+        <span className="badge" title="Kuulata" aria-label="Kuulata">kuulata</span>
       )}
-      {a?.notes && <span className="badge" title="Has notes" aria-label="Has notes">✎</span>}
+      {a?.good && (
+        <span className="badge" title="Päris hea" aria-label="Päris hea">päris hea</span>
+      )}
       {favouriteId && (
-        <span className="badge" title="In favourites" aria-label="In favourites">★</span>
+        <span className="badge" title="Põnev" aria-label="Põnev">★</span>
       )}
     </span>
   );
 }
 
 const FILTERS = [
-  { key: 'all',        label: 'All',           params: {} },
-  { key: 'unlistened', label: 'Not listened',  params: { listened: 'false' } },
-  { key: 'listened',   label: 'Listened',      params: { listened: 'true' } },
-  { key: 'want',       label: 'Queue',         params: { want: 'true' } },
+  { key: 'all',  label: 'Kõik',      params: {} },
+  { key: 'want', label: 'Kuulata',   params: { want: 'true' } },
+  { key: 'good', label: 'Päris hea', params: { good: 'true' } },
 ];
 
 export default function SeriesShows() {
@@ -51,15 +51,15 @@ export default function SeriesShows() {
 
   const choose = key => { setFilter(key); setPage(1); };
 
-  if (loading) return <p className="empty">Loading…</p>;
+  if (loading) return <p className="empty">Laadin…</p>;
   if (error) return <p className="err">{error.message}</p>;
 
   return (
     <>
       <h1>{slug}</h1>
-      <p className="sub">{fmtNum(data.total)} shows</p>
+      <p className="sub">{fmtNum(data.total)} saadet</p>
 
-      <div className="filters" role="group" aria-label="Filter shows">
+      <div className="filters" role="group" aria-label="Filtreeri saateid">
         {FILTERS.map(f => (
           <button key={f.key} type="button"
                   className={f.key === filter ? 'chip on' : 'chip'}
@@ -69,11 +69,11 @@ export default function SeriesShows() {
       </div>
 
       {data.rows.length === 0 ? (
-        <p className="empty">No shows match this filter.</p>
+        <p className="empty">Ükski saade ei vasta filtrile.</p>
       ) : (
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Date</th><th>Title</th><th className="num">Tracks</th><th>ERR</th></tr></thead>
+            <thead><tr><th>Kuupäev</th><th>Pealkiri</th><th className="num">Lugusid</th><th>ERR</th></tr></thead>
             <tbody>
               {data.rows.map(r => (
                 <tr key={r.id}>
@@ -83,7 +83,7 @@ export default function SeriesShows() {
                     <StateBadge annotation={r.annotation} favouriteId={r.favourite_id} />
                   </td>
                   <td className="num">{r.track_count}</td>
-                  <td><a href={r.url} target="_blank" rel="noreferrer">open</a></td>
+                  <td><a href={r.url} target="_blank" rel="noreferrer">ava</a></td>
                 </tr>
               ))}
             </tbody>
