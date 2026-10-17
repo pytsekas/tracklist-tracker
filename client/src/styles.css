@@ -93,5 +93,5 @@ code { background: var(--panel); padding: 1px 5px; border-radius: 4px; font-size
 .fav-err { font-size: .85rem; }
 .links { display: inline-flex; gap: .6rem; font-size: .85rem; white-space: nowrap; }
 .notes-small { min-width: 220px; font-size: .9rem; }
-.sub-line { display: block; color: var(--muted); font-size: .85rem; }
+.sub-line { display: block; color: var(--muted); font-size: .85rem; white-space: pre-line; }
 .group { display: inline-flex; gap: .4rem; flex-wrap: wrap; }

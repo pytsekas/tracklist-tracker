@@ -42,13 +42,16 @@ export function createSqliteStore(file) {
   handle.exec(DDL);
   // CREATE TABLE IF NOT EXISTS adds nothing to a table that already exists,
   // so a dev file from before the `good` flag would make the upsert below
-  // fail with "no such column". Add the two columns once; SQLite has no
-  // ADD COLUMN IF NOT EXISTS, hence the pragma check.
+  // fail with "no such column". Add the missing columns once; SQLite has no
+  // ADD COLUMN IF NOT EXISTS, hence the pragma check. Each column is checked
+  // on its own, so a migration that was interrupted between the two ALTERs
+  // heals on the next open instead of failing every write for good.
   const columns = handle.pragma('table_info(annotations)').map(c => c.name);
   if (!columns.includes('good')) {
-    handle.exec(`
-      ALTER TABLE annotations ADD COLUMN good    INTEGER NOT NULL DEFAULT 0;
-      ALTER TABLE annotations ADD COLUMN good_at TEXT;`);
+    handle.exec('ALTER TABLE annotations ADD COLUMN good INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!columns.includes('good_at')) {
+    handle.exec('ALTER TABLE annotations ADD COLUMN good_at TEXT');
   }
 
   const selectOne = handle.prepare(

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, fmtDate, fmtNum } from '../api.js';
+import { api, fmtDate, fmtCount } from '../api.js';
 import { useAsync } from '../components/useAsync.js';
 import Pager from '../components/Pager.jsx';
 
@@ -57,7 +57,7 @@ export default function SeriesShows() {
   return (
     <>
       <h1>{slug}</h1>
-      <p className="sub">{fmtNum(data.total)} saadet</p>
+      <p className="sub">{fmtCount(data.total, 'saade', 'saadet')}</p>
 
       <div className="filters" role="group" aria-label="Filtreeri saateid">
         {FILTERS.map(f => (

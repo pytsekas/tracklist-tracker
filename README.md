@@ -254,7 +254,7 @@ that a green `apply` does not surface on its own, is documented in
 | --- | --- | --- |
 | GET | `/api/stats` | row counts |
 | GET | `/api/series` | series with show/track counts and date range |
-| GET | `/api/series/:slug/shows` | `?page=&pageSize=` |
+| GET | `/api/series/:slug/shows` | `?page=&pageSize=&want=true&good=true` |
 | GET | `/api/shows/:id` | episode plus its tracks |
 | GET | `/api/tracks` | `?q=&series=&from=&to=&page=&pageSize=` |
 | GET | `/api/artists` | `?q=&page=` — ranked by play count |

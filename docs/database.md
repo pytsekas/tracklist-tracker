@@ -366,9 +366,13 @@ annotations/{owner email}/shows/{content_id}
 ```
 
 One document per **annotated** show, never one per show: a cold start reads
-only what has been marked. The document holds exactly the five fields above;
-absent fields read back as the defaults. Document ids are strings, so the
-integer `content_id` is converted at the driver boundary and nowhere else.
+only what has been marked. The document holds the five fields above; absent
+fields read back as the defaults. A document written before a field was
+removed (`listened`, `listened_at`, `rating`, `tags`) still carries it: the
+driver never reads those fields, and the next write to that show erases them,
+because the transaction writes the whole document rather than merging.
+Document ids are strings, so the integer `content_id` is converted at the
+driver boundary and nowhere else.
 
 A merge runs in a Firestore transaction (read, apply the patch, write) so two
 rapid partial updates cannot lose each other's fields. Every call is raced

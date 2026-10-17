@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom';
-import { api, fmtDate, fmtNum } from '../api.js';
+import { api, fmtDate, fmtNum, fmtCount } from '../api.js';
 import { useAsync } from '../components/useAsync.js';
 import FavouriteButton from '../components/FavouriteButton.jsx';
 import AddAlbum from '../components/AddAlbum.jsx';
@@ -17,7 +17,7 @@ export default function Artist() {
   return (
     <>
       <h1>{artist.name}</h1>
-      <p className="sub">{fmtNum(tracks.length)} esitust · {fmtNum(distinct)} eri lugu</p>
+      <p className="sub">{fmtCount(tracks.length, 'esitus', 'esitust')} · {fmtNum(distinct)} eri lugu</p>
       <div className="annotator-row">
         <FavouriteButton favouriteId={artist.favourite_id}
                          add={{ kind: 'artist', artist_id: artist.id }}

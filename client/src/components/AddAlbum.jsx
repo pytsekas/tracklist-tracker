@@ -40,7 +40,7 @@ export default function AddAlbum({ artist: fixedArtist = null, onAdded }) {
 
   return (
     <form className="controls" onSubmit={submit}
-          aria-label={fixedArtist ? `Lisa albumi esitajalt ${fixedArtist}` : 'Lisa album'}>
+          aria-label={fixedArtist ? `Lisa album esitajale ${fixedArtist}` : 'Lisa album'}>
       {!fixedArtist && (
         <input type="text" value={artist} placeholder="Esitaja" aria-label="Esitaja"
                onChange={e => setArtist(e.target.value)} />

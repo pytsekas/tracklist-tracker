@@ -192,6 +192,12 @@ test('a dev file from before the good flag gains the two columns on open', async
   assert.equal(next.good, true);
   assert.match(next.good_at, /^\d{4}-\d{2}-\d{2}T/);
   store.close();
+
+  // Reopening an already-migrated file must skip the ALTERs cleanly.
+  const again = createSqliteStore(file);
+  const after = await again.get(OWNER, 1610000001);
+  assert.equal(after.good, true, 'the migrated row survives a reopen');
+  again.close();
 });
 
 test('the store survives being reopened', async () => {

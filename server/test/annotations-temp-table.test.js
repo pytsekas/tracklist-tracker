@@ -123,5 +123,5 @@ test('good filtering works in SQL', () => {
   const n = handle.prepare(`
     SELECT COUNT(*) n FROM shows sh ${ANNOTATION_JOIN}
     WHERE COALESCE(a.good, 0) = 1`).get().n;
-  assert.equal(n, 1, 'unannotated shows join to NULL and COALESCE to 0');
+  assert.equal(n, 1, 'unannotated shows join to NULL and fail the = 1 test; COALESCE is kept for a future = 0 filter');
 });

@@ -65,8 +65,10 @@ router.get('/series/:slug/shows', (req, res, next) => {
     const p = page(req.query), ps = size(req.query);
     const where = ['s.slug = ?'], args = [req.params.slug];
 
-    // COALESCE, because an unannotated show LEFT JOINs to NULL, and a NULL
-    // flag must read as "not set" rather than fall out of the comparison.
+    // An unannotated show LEFT JOINs to NULL. With only `= 1` filters left,
+    // `NULL = 1` already drops those rows, so COALESCE changes no result
+    // today; it is kept so a future `= 0` filter ("not marked") stays
+    // correct, because `NULL = 0` is NULL, not true.
     if (req.query.good === 'true') where.push('COALESCE(a.good, 0) = 1');
     if (req.query.want === 'true') where.push('COALESCE(a.want_to_listen, 0) = 1');
 

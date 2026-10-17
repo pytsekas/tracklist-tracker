@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, fmtDate, fmtNum } from '../api.js';
+import { api, fmtDate, fmtCount } from '../api.js';
 import { useAsync } from '../components/useAsync.js';
 import { StateBadge } from './SeriesShows.jsx';
 
@@ -55,7 +55,7 @@ export default function Mine() {
   return (
     <>
       <h1>Minu</h1>
-      <p className="sub">{fmtNum(rows.length)} saadet</p>
+      <p className="sub">{fmtCount(rows.length, 'saade', 'saadet')}</p>
 
       <div className="filters" role="group" aria-label="Vaade">
         {VIEWS.map(v => (

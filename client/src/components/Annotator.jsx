@@ -31,6 +31,10 @@ export default function Annotator({ contentId, annotation, onChange, title }) {
   // land last and revert the later change.
   const seq = useRef(0);
 
+  // Accessible names carry the show title when the caller gives one, so two
+  // shows' controls never read the same to a screen reader.
+  const label = name => (title ? `${name}: ${title}` : name);
+
   useEffect(() => {
     setValue(annotation ?? EMPTY);
     setNotes(annotation?.notes ?? '');
@@ -91,15 +95,15 @@ export default function Annotator({ contentId, annotation, onChange, title }) {
     <section className="annotator">
       <div className="annotator-row">
         <button type="button" className={value.want_to_listen ? 'fav on' : 'fav'}
-                aria-pressed={value.want_to_listen}
-                aria-label={`Kuulata: ${title}`}
+                aria-pressed={value.want_to_listen} disabled={saving}
+                aria-label={label('Kuulata')}
                 onClick={() => save({ want_to_listen: !value.want_to_listen })}>
           Kuulata
         </button>
 
         <button type="button" className={value.good ? 'fav on' : 'fav'}
-                aria-pressed={value.good}
-                aria-label={`Päris hea: ${title}`}
+                aria-pressed={value.good} disabled={saving}
+                aria-label={label('Päris hea')}
                 onClick={() => save({ good: !value.good })}>
           Päris hea
         </button>
@@ -115,7 +119,7 @@ export default function Annotator({ contentId, annotation, onChange, title }) {
       {value.good && (
         <textarea className="notes" rows={3} value={notes}
                   placeholder="Miks see saade hea oli…"
-                  aria-label={`Kommentaar: ${title}`}
+                  aria-label={label('Kommentaar')}
                   onChange={e => onNotes(e.target.value)} />
       )}
     </section>

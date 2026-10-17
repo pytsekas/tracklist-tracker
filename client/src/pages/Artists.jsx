@@ -24,6 +24,7 @@ export default function Artists() {
 
       <div className="controls">
         <input type="search" placeholder="Esitaja nimi…" value={input}
+               aria-label="Otsi esitajaid"
                onChange={e => setInput(e.target.value)} />
       </div>
 

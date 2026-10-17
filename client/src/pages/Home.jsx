@@ -13,7 +13,7 @@ export default function Home() {
   return (
     <>
       <h1>Sarjad</h1>
-      <p className="sub">ERR-i saatelugude nimekirjadest imporditud raadiosaated.</p>
+      <p className="sub">ERR-i saadete lugude nimekirjadest imporditud raadiosaated.</p>
 
       {s && (
         <div className="stats">
@@ -26,8 +26,8 @@ export default function Home() {
 
       {series.data.length === 0 ? (
         <p className="empty">
-          Lugude nimekirju pole laaditud. Arhiiv ehitatakse rakenduse ehitamisel{' '}
-          <code>data/csv/</code> CSV-failidest; kohapeal käivitades vaata README-d.
+          Lugude nimekirju pole laaditud. Arhiiv luuakse rakenduse ehitamisel kausta{' '}
+          <code>data/csv/</code> CSV-failidest; kohalikult käivitades vaata README-d.
         </p>
       ) : (
         <div className="table-scroll">

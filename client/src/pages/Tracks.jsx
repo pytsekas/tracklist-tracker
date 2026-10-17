@@ -28,8 +28,10 @@ export default function Tracks() {
 
       <div className="controls">
         <input type="search" placeholder="Esitaja või pealkiri…" value={input}
+               aria-label="Otsi lugusid"
                onChange={e => setInput(e.target.value)} />
-        <select value={series} onChange={e => { setSeries(e.target.value); setPage(1); }}>
+        <select value={series} aria-label="Sari"
+                onChange={e => { setSeries(e.target.value); setPage(1); }}>
           <option value="">Kõik sarjad</option>
           {(list.data || []).map(s => <option key={s.slug} value={s.slug}>{s.name}</option>)}
         </select>

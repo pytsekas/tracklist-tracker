@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, fmtDate, fmtNum } from '../api.js';
+import { api, fmtDate, fmtCount } from '../api.js';
 import { useAsync } from '../components/useAsync.js';
 import AddAlbum from '../components/AddAlbum.jsx';
 import { lookupLinks } from '../lookup.js';
@@ -47,7 +47,7 @@ export default function Favourites() {
   return (
     <>
       <h1>Põnev</h1>
-      <p className="sub">{fmtNum(rows.length)} kirjet</p>
+      <p className="sub">{fmtCount(rows.length, 'kirje', 'kirjet')}</p>
 
       <AddAlbum onAdded={onAdded} />
 
@@ -73,7 +73,7 @@ export default function Favourites() {
         <div className="table-scroll">
           <table>
             <thead>
-              <tr><th>Liik</th><th>Mis</th><th>Otsi</th><th>Märkmed</th><th>Tehtud</th><th></th></tr>
+              <tr><th>Liik</th><th>Kirje</th><th>Otsi</th><th>Märkmed</th><th>Tehtud</th><th></th></tr>
             </thead>
             <tbody>
               {rows.map(r => <Row key={r.id} entry={r} onChange={replace} onRemove={drop} />)}
