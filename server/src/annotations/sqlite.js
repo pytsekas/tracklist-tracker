@@ -4,16 +4,18 @@ import path from 'node:path';
 import { EMPTY, applyPatch, unavailable } from './store.js';
 
 // A dev file created before 2026-10-16 still has the dropped `rating` and
-// `tags` columns. CREATE TABLE IF NOT EXISTS leaves them in place, the insert
+// `tags` columns, and one from before 2026-10-17 the dropped `listened` and
+// `listened_at`. CREATE TABLE IF NOT EXISTS leaves them in place, the insert
 // below names its columns and never touches them, and their old defaults
-// (NULL and '[]') tolerate that, so no migration is needed: delete the
-// gitignored file if the leftovers bother you.
+// tolerate that, so dropped columns need no migration: delete the gitignored
+// file if the leftovers bother you. Added columns are another matter — see
+// the ALTER TABLE guard in createSqliteStore.
 const DDL = `
 CREATE TABLE IF NOT EXISTS annotations (
   owner          TEXT    NOT NULL,
   content_id     INTEGER NOT NULL,
-  listened       INTEGER NOT NULL DEFAULT 0,
-  listened_at    TEXT,
+  good           INTEGER NOT NULL DEFAULT 0,
+  good_at        TEXT,
   notes          TEXT,
   want_to_listen INTEGER NOT NULL DEFAULT 0,
   updated_at     TEXT    NOT NULL,
@@ -22,8 +24,8 @@ CREATE TABLE IF NOT EXISTS annotations (
 
 /** DB row -> Annotation. Booleans are 0/1 at rest. */
 const toAnnotation = row => ({
-  listened: !!row.listened,
-  listened_at: row.listened_at,
+  good: !!row.good,
+  good_at: row.good_at,
   notes: row.notes,
   want_to_listen: !!row.want_to_listen,
   updated_at: row.updated_at,
@@ -38,6 +40,16 @@ export function createSqliteStore(file) {
   const handle = new Database(file);
   handle.pragma('journal_mode = WAL');
   handle.exec(DDL);
+  // CREATE TABLE IF NOT EXISTS adds nothing to a table that already exists,
+  // so a dev file from before the `good` flag would make the upsert below
+  // fail with "no such column". Add the two columns once; SQLite has no
+  // ADD COLUMN IF NOT EXISTS, hence the pragma check.
+  const columns = handle.pragma('table_info(annotations)').map(c => c.name);
+  if (!columns.includes('good')) {
+    handle.exec(`
+      ALTER TABLE annotations ADD COLUMN good    INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE annotations ADD COLUMN good_at TEXT;`);
+  }
 
   const selectOne = handle.prepare(
     'SELECT * FROM annotations WHERE owner = ? AND content_id = ?');
@@ -45,11 +57,11 @@ export function createSqliteStore(file) {
     'SELECT * FROM annotations WHERE owner = ? ORDER BY content_id');
   const upsert = handle.prepare(`
     INSERT INTO annotations
-      (owner, content_id, listened, listened_at, notes, want_to_listen, updated_at)
+      (owner, content_id, good, good_at, notes, want_to_listen, updated_at)
     VALUES
-      (@owner, @content_id, @listened, @listened_at, @notes, @want_to_listen, @updated_at)
+      (@owner, @content_id, @good, @good_at, @notes, @want_to_listen, @updated_at)
     ON CONFLICT (owner, content_id) DO UPDATE SET
-      listened = excluded.listened, listened_at = excluded.listened_at,
+      good = excluded.good, good_at = excluded.good_at,
       notes = excluded.notes, want_to_listen = excluded.want_to_listen,
       updated_at = excluded.updated_at`);
   const del = handle.prepare(
@@ -81,8 +93,8 @@ export function createSqliteStore(file) {
         upsert.run({
           owner,
           content_id: id,
-          listened: next.listened ? 1 : 0,
-          listened_at: next.listened_at,
+          good: next.good ? 1 : 0,
+          good_at: next.good_at,
           notes: next.notes,
           want_to_listen: next.want_to_listen ? 1 : 0,
           updated_at: next.updated_at,

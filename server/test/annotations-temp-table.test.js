@@ -19,7 +19,7 @@ const FIXTURE_CSV = path.join(__dirname, 'fixtures/csv');
 let handle;
 
 const ann = over => ({
-  listened: false, listened_at: null, notes: null,
+  good: false, good_at: null, notes: null,
   want_to_listen: false, updated_at: '2026-09-22T10:00:00.000Z', ...over,
 });
 
@@ -40,7 +40,7 @@ test('the archive connection is still read-only', () => {
 });
 
 test('loadAnnotations replaces the whole table', () => {
-  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true })]]));
+  loadAnnotations(handle, new Map([[1610000001, ann({ good: true })]]));
   assert.equal(handle.prepare('SELECT COUNT(*) n FROM annotations').get().n, 1);
 
   loadAnnotations(handle, new Map([[1610000002, ann({ notes: 'teine' })]]));
@@ -49,9 +49,9 @@ test('loadAnnotations replaces the whole table', () => {
 });
 
 test('booleans round-trip as 0/1', () => {
-  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true, want_to_listen: false })]]));
-  const row = handle.prepare('SELECT listened, want_to_listen FROM annotations').get();
-  assert.equal(row.listened, 1);
+  loadAnnotations(handle, new Map([[1610000001, ann({ good: true, want_to_listen: false })]]));
+  const row = handle.prepare('SELECT good, want_to_listen FROM annotations').get();
+  assert.equal(row.good, 1);
   assert.equal(row.want_to_listen, 0);
 });
 
@@ -60,32 +60,32 @@ test('upsertAnnotationRow inserts then updates one row', () => {
   upsertAnnotationRow(handle, 1610000001, ann({ notes: 'esimene' }));
   assert.equal(handle.prepare('SELECT notes FROM annotations WHERE content_id = 1610000001').get().notes, 'esimene');
 
-  upsertAnnotationRow(handle, 1610000001, ann({ listened: true, notes: 'hea' }));
-  const row = handle.prepare('SELECT listened, notes FROM annotations WHERE content_id = 1610000001').get();
-  assert.equal(row.listened, 1);
+  upsertAnnotationRow(handle, 1610000001, ann({ good: true, notes: 'hea' }));
+  const row = handle.prepare('SELECT good, notes FROM annotations WHERE content_id = 1610000001').get();
+  assert.equal(row.good, 1);
   assert.equal(row.notes, 'hea');
   assert.equal(handle.prepare('SELECT COUNT(*) n FROM annotations').get().n, 1);
 });
 
 test('removeAnnotationRow deletes one row', () => {
-  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true })]]));
+  loadAnnotations(handle, new Map([[1610000001, ann({ good: true })]]));
   removeAnnotationRow(handle, 1610000001);
   assert.equal(handle.prepare('SELECT COUNT(*) n FROM annotations').get().n, 0);
 });
 
 test('the join exposes annotation columns and nulls for unannotated shows', () => {
-  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true, notes: 'hea' })]]));
+  loadAnnotations(handle, new Map([[1610000001, ann({ good: true, notes: 'hea' })]]));
   const rows = handle.prepare(`
     SELECT sh.content_id, ${ANNOTATION_COLUMNS}
     FROM shows sh ${ANNOTATION_JOIN}
     ORDER BY sh.content_id`).all();
 
   const annotated = rows.find(r => r.content_id === 1610000001);
-  assert.equal(annotated.ann_listened, 1);
+  assert.equal(annotated.ann_good, 1);
   assert.equal(annotated.ann_notes, 'hea');
 
   const untouched = rows.find(r => r.content_id !== 1610000001);
-  assert.equal(untouched.ann_listened, null, 'unannotated shows join to NULL');
+  assert.equal(untouched.ann_good, null, 'unannotated shows join to NULL');
 });
 
 test('the selected columns carry no rating or tags', () => {
@@ -93,20 +93,20 @@ test('the selected columns carry no rating or tags', () => {
 });
 
 test('a loaded row round-trips through annotationOf without rating or tags', () => {
-  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true, notes: 'hea' })]]));
+  loadAnnotations(handle, new Map([[1610000001, ann({ good: true, notes: 'hea' })]]));
   const row = handle.prepare(`
     SELECT sh.content_id, ${ANNOTATION_COLUMNS}
     FROM shows sh ${ANNOTATION_JOIN}
     WHERE sh.content_id = 1610000001`).get();
   const a = annotationOf(row);
   assert.deepEqual(Object.keys(a).sort(),
-    ['listened', 'listened_at', 'notes', 'updated_at', 'want_to_listen']);
-  assert.equal(a.listened, true);
+    ['good', 'good_at', 'notes', 'updated_at', 'want_to_listen']);
+  assert.equal(a.good, true);
   assert.equal(a.notes, 'hea');
 });
 
 test('the join does not clobber the show\'s own updated_at', () => {
-  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true })]]));
+  loadAnnotations(handle, new Map([[1610000001, ann({ good: true })]]));
   const row = handle.prepare(`
     SELECT sh.*, ${ANNOTATION_COLUMNS}
     FROM shows sh ${ANNOTATION_JOIN}
@@ -118,11 +118,10 @@ test('the join does not clobber the show\'s own updated_at', () => {
   assert.equal(row.ann_updated_at, '2026-09-22T10:00:00.000Z');
 });
 
-test('unlistened filtering works in SQL', () => {
-  loadAnnotations(handle, new Map([[1610000001, ann({ listened: true })]]));
+test('good filtering works in SQL', () => {
+  loadAnnotations(handle, new Map([[1610000001, ann({ good: true })]]));
   const n = handle.prepare(`
     SELECT COUNT(*) n FROM shows sh ${ANNOTATION_JOIN}
-    WHERE COALESCE(a.listened, 0) = 0`).get().n;
-  const total = handle.prepare('SELECT COUNT(*) n FROM shows').get().n;
-  assert.equal(n, total - 1);
+    WHERE COALESCE(a.good, 0) = 1`).get().n;
+  assert.equal(n, 1, 'unannotated shows join to NULL and COALESCE to 0');
 });

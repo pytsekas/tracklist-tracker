@@ -64,7 +64,7 @@ const send = async (method, p, body) => {
 };
 
 test('PATCH with the store never initialised is 502, not 500', async () => {
-  const { status, body } = await send('PATCH', `/api/shows/${SHOW}/annotation`, { listened: true });
+  const { status, body } = await send('PATCH', `/api/shows/${SHOW}/annotation`, { good: true });
   assert.equal(status, 502);
   assert.match(body.error, /annotation store unavailable/);
 });

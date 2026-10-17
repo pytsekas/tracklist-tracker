@@ -172,16 +172,16 @@ test('GET /api/shows/:id returns a null annotation when untouched', async () => 
 });
 
 test('an annotation in the temp table surfaces on both read routes', async () => {
-  await store.merge(DEV_USER, 1610000001, { listened: true, notes: 'suvi' });
+  await store.merge(DEV_USER, 1610000001, { good: true, notes: 'suvi' });
   loadAnnotations(handle, await store.list(DEV_USER));
 
   const { body: list } = await get('/api/series/testshow/shows');
   const row = list.rows.find(r => r.content_id === 1610000001);
-  assert.equal(row.annotation.listened, true);
+  assert.equal(row.annotation.good, true);
   assert.equal(row.annotation.notes, 'suvi');
 
   const { body: one } = await get(`/api/shows/${row.id}`);
-  assert.equal(one.annotation.listened, true);
+  assert.equal(one.annotation.good, true);
   assert.equal(one.annotation.notes, 'suvi');
 });
 

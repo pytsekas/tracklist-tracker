@@ -65,11 +65,10 @@ router.get('/series/:slug/shows', (req, res, next) => {
     const p = page(req.query), ps = size(req.query);
     const where = ['s.slug = ?'], args = [req.params.slug];
 
-    // COALESCE, because an unannotated show LEFT JOINs to NULL and NULL = 0
-    // is NULL, not true — without it "unlistened" would return nothing.
-    if (req.query.listened === 'true')  where.push('COALESCE(a.listened, 0) = 1');
-    if (req.query.listened === 'false') where.push('COALESCE(a.listened, 0) = 0');
-    if (req.query.want === 'true')      where.push('COALESCE(a.want_to_listen, 0) = 1');
+    // COALESCE, because an unannotated show LEFT JOINs to NULL, and a NULL
+    // flag must read as "not set" rather than fall out of the comparison.
+    if (req.query.good === 'true') where.push('COALESCE(a.good, 0) = 1');
+    if (req.query.want === 'true') where.push('COALESCE(a.want_to_listen, 0) = 1');
 
     const clause = `WHERE ${where.join(' AND ')}`;
     const from = `

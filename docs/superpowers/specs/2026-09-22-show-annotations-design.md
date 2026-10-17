@@ -5,6 +5,11 @@
 > job of marking things worth coming back to; until it lands, the queue is the
 > only such list. The body below is kept as the historical record and still
 > describes both fields.
+>
+> **2026-10-17:** `listened` and `listened_at` were replaced by `good` and
+> `good_at`, a "pretty good" flag whose comment is the notes, because the owner
+> wanted the show view to hold only "want to listen" and "pretty good". The
+> body below still describes `listened`.
 
 Date: 2026-09-22
 Status: approved design, pending implementation plan

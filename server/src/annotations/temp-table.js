@@ -15,8 +15,8 @@
 const DDL = `
 CREATE TEMP TABLE IF NOT EXISTS annotations (
   content_id     INTEGER PRIMARY KEY,
-  listened       INTEGER NOT NULL DEFAULT 0,
-  listened_at    TEXT,
+  good           INTEGER NOT NULL DEFAULT 0,
+  good_at        TEXT,
   notes          TEXT,
   want_to_listen INTEGER NOT NULL DEFAULT 0,
   updated_at     TEXT    NOT NULL
@@ -31,8 +31,8 @@ CREATE TEMP TABLE IF NOT EXISTS annotations (
  * silently lost from the payload.
  */
 export const ANNOTATION_COLUMNS = `
-  a.listened       AS ann_listened,
-  a.listened_at    AS ann_listened_at,
+  a.good           AS ann_good,
+  a.good_at        AS ann_good_at,
   a.notes          AS ann_notes,
   a.want_to_listen AS ann_want_to_listen,
   a.updated_at     AS ann_updated_at`;
@@ -46,8 +46,8 @@ export function createAnnotationTable(handle) {
 
 const params = (contentId, a) => ({
   content_id: Number(contentId),
-  listened: a.listened ? 1 : 0,
-  listened_at: a.listened_at,
+  good: a.good ? 1 : 0,
+  good_at: a.good_at,
   notes: a.notes,
   want_to_listen: a.want_to_listen ? 1 : 0,
   updated_at: a.updated_at,
@@ -55,11 +55,11 @@ const params = (contentId, a) => ({
 
 const UPSERT = `
 INSERT INTO annotations
-  (content_id, listened, listened_at, notes, want_to_listen, updated_at)
+  (content_id, good, good_at, notes, want_to_listen, updated_at)
 VALUES
-  (@content_id, @listened, @listened_at, @notes, @want_to_listen, @updated_at)
+  (@content_id, @good, @good_at, @notes, @want_to_listen, @updated_at)
 ON CONFLICT (content_id) DO UPDATE SET
-  listened = excluded.listened, listened_at = excluded.listened_at,
+  good = excluded.good, good_at = excluded.good_at,
   notes = excluded.notes, want_to_listen = excluded.want_to_listen,
   updated_at = excluded.updated_at`;
 
